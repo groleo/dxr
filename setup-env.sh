@@ -1,14 +1,22 @@
 #!/bin/bash
 
 if [ -z "$1" ]; then
-  echo "Usage: . $0 <srcdir>"
+  echo "Usage: . ${BASH_SOURCE[0]} <srcdir>"
+  return &> /dev/null || exit 0
 fi
 SRCDIR="$1"
 
 if [ -z "$DXRSRC" ]; then
-  echo "Setting DXRSRC variable"
+  echo -n "Setting DXRSRC variable: "
   scriptsrc=${BASH_SOURCE[0]}
-  export DXRSRC=$(dirname $(readlink -f $scriptsrc))
+  if [ "`dirname $scriptsrc`" = "." ]; then
+    export DXRSRC=$(pwd)
+  else
+    export DXRSRC=$(dirname $(readlink -f $scriptsrc))
+  fi
+  echo "$DXRSRC"
+else
+  echo "Using DXRSRC:$DXRSRC"
 fi
 
 echo "Finding available DXR plugins..."
@@ -18,11 +26,22 @@ files = [x.__file__ for x in dxr.get_active_plugins(None, '$DXRSRC')]
 print ' '.join([x[:x.find('/indexer.py')] for x in files])
 HEREDOC
 ) )
-echo -n "Found:"
-for plugin in $(seq 0 $((${#tools[@]} - 1))); do
-  echo -n " $(basename ${tools[plugin]})"
-done
-echo ""
+
+if [ "$?" != "0" ]; then
+  echo "Error while looking for plugins"
+  return &> /dev/null || exit 0
+fi
+
+if [ "$(seq 0 $((${#tools[@]} - 1)))" = "" ]; then
+  echo "No plugins"
+  return &> /dev/null || exit 0
+else
+  echo -n "Plugins found:"
+  for plugin in $(seq 0 $((${#tools[@]} - 1))); do
+    echo -n " $(basename ${tools[plugin]})"
+  done
+  echo ""
+fi
 
 for plugin in $(seq 0 $((${#tools[@]} - 1))); do
   echo -n "Prebuilding $(basename ${tools[plugin]})... "
