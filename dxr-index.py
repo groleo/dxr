@@ -101,6 +101,10 @@ def builddb(treecfg, dbdir):
     if plugin.__name__ in big_blob:
       all_statements.extend(plugin.sqlify(big_blob[plugin.__name__]))
 
+  if schemata == []:
+    print "No schemata"
+    return
+
   dbname = treecfg.tree + '.sqlite'
   conn = sqlite3.connect(os.path.join(dbdir, dbname))
   conn.executescript('\n'.join(schemata))

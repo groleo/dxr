@@ -236,6 +236,12 @@ def sqlify(blob):
 
 def can_use(treecfg):
   # We need to have clang and llvm-config in the path
+  if not dxr.plugins.in_path('clang'):
+    raise BaseException("No 'clang' installed")
+
+  if not dxr.plugins.in_path('llvm-config'):
+    raise BaseException("No 'llvm-config' installed")
+
   return dxr.plugins.in_path('clang') and dxr.plugins.in_path('llvm-config')
 
 schema = dxr.plugins.Schema({
