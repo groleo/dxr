@@ -6,6 +6,12 @@ if [ -z "$1" ]; then
 fi
 SRCDIR="$1"
 
+if [ -z "$2" ]; then
+  export OBJDIR="$1"
+else
+  export OBJDIR="$2"
+fi
+
 if [ -z "$DXRSRC" ]; then
   echo -n "Setting DXRSRC variable: "
   scriptsrc=${BASH_SOURCE[0]}
