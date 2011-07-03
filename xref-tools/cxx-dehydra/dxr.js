@@ -25,11 +25,13 @@ var srcRegex = new RegExp("^" + srcroot);
 
 var sql = [];
 
-function process_decl (d) {
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+function process_decl (d)
+{
   // skip things like /home/dave/dxr/tools/gcc-dehydra/installed/include/c++/4.3.0/exception
-  if (!srcRegex.test(d.loc.file))
+  if (srcRegex.test(d.loc.file))
     return;
-
   // Skip things we don't care about
   if ( (/:?:?operator.*$/.exec(d.name)) ||      /* overloaded operators */
        (/^D_[0-9]+$/.exec(d.name))      ||      /* gcc temporaries */
@@ -99,8 +101,15 @@ function process_decl (d) {
 }
 
 
+//////////////////////////////////////////////////////////////////////////////
 // DECLs
-function process_type (c) {
+//////////////////////////////////////////////////////////////////////////////
+function process_type (c)
+{
+  if ( !srcRegex.test(c.loc.file)
+  && /^[^\/]+\.cpp$/.exec(c.loc.file)
+  && /dist\/include/.exec(c.loc.file))
+        return ;
   //TODO - what to do about other types?
   if (c.typedef)
     process_typedef(c);
@@ -110,274 +119,283 @@ function process_type (c) {
     process_EnumType(c);
   // TODO: what about other types?
 
-  function process_typedef (c) {
-    if (srcRegex.test(c.loc.file) || /^[^\/]+\.cpp$/.exec(c.loc.file) || /dist\/include/.exec(c.loc.file)) {
-      // Normalize path and throw away column info -- we just care about file + line for types.
-      fix_path(c.loc);
-      var tloc = c.loc.file + ":" + c.loc.line.toString();
-      var ttypedefname = c.typedef.name || '';
-      var ttypedefloc = '';
-      if (c.typedef.loc) {
-        var vloc = c.typedef.loc;
-        fix_path(vloc);
-        ttypedefloc = vloc.file + ":" + vloc.line.toString();
-      }
 
-      var ttemplate = '';
-      if (c.template)
-        ttemplate = c.template.name;
+  function process_typedef (c)
+  {
+          // Normalize path and throw away column info -- we just care about file + line for types.
+          fix_path(c.loc);
+          var tloc = c.loc.file + ":" + c.loc.line.toString();
+          var ttypedefname = c.typedef.name || '';
+          var ttypedefloc = '';
+          if (c.typedef.loc) {
+                  var vloc = c.typedef.loc;
+                  fix_path(vloc);
+                  ttypedefloc = vloc.file + ":" + vloc.line.toString();
+          }
 
-      var tignore = 0;
+          var ttemplate = '';
+          if (c.template)
+                  ttemplate = c.template.name;
 
-      sql.push(insert_stmt("types", ['tname','tloc','ttypedefname','ttypedefloc','tkind','ttemplate','tignore','tmodule'],
-                           [c.name, tloc, ttypedefname, ttypedefloc, 'typedef', ttemplate, tignore, 'fixme']));
-    }
+          var tignore = 0;
+
+          sql.push(insert_stmt("types", ['tname','tloc','ttypedefname','ttypedefloc','tkind','ttemplate','tignore','tmodule'],
+                                  [c.name, tloc, ttypedefname, ttypedefloc, 'typedef', ttemplate, tignore, 'fixme']));
   }
 
   function process_EnumType (c) {
-    if (!c.name || c.name.toString() == 'undefined')
-      return;
+          if (!c.name || c.name.toString() == 'undefined')
+                  return;
 
-    if (srcRegex.test(c.loc.file) || /^[^\/]+\.cpp$/.exec(c.loc.file) || /dist\/include/.exec(c.loc.file)) {
-      // Normalize path and throw away column info -- we just care about file + line for types.
-      fix_path(c.loc);
-      var tloc = c.loc.file + ":" + c.loc.line.toString();
+          // Normalize path and throw away column info -- we just care about file + line for types.
+          fix_path(c.loc);
+          var tloc = c.loc.file + ":" + c.loc.line.toString();
 
-      // 'fixme' will be corrected in post-processing.  Can't do it here, because I need to follow
-      // symlinks to get full paths for some files.
-      sql.push(insert_stmt("types", ['tname','tloc','tkind','tmodule'],
-                           [c.name, tloc, c.kind, 'fixme']));
+          // 'fixme' will be corrected in post-processing.  Can't do it here, because I need to follow
+          // symlinks to get full paths for some files.
+          sql.push(insert_stmt("types", ['tname','tloc','tkind','tmodule'],
+                                  [c.name, tloc, c.kind, 'fixme']));
 
-      if (c.members) {
-        for (var i = 0; i < c.members.length; i++) {
-          // XXX: use tloc for mtloc, mdecl, mdef, since they are essentially the same thing.
-          var mshortname = c.members[i].name.replace(/\(.*$/, '');
-          var mstatic = c.members[i].isStatic ? 1 : -1;
-          var maccess = c.members[i].access || '';
-          sql.push(insert_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mdef','mvalue','maccess','mstatic'], [c.name,tloc,c.members[i].name,mshortname,tloc,tloc,c.members[i].value,maccess,mstatic]));
-        }
-      }
-    }
+          if (c.members) {
+                  for (var i = 0; i < c.members.length; i++) {
+                          // XXX: use tloc for mtloc, mdecl, mdef, since they are essentially the same thing.
+                          var mshortname = c.members[i].name.replace(/\(.*$/, '');
+                          var mstatic = c.members[i].isStatic ? 1 : -1;
+                          var maccess = c.members[i].access || '';
+                          sql.push(insert_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mdef','mvalue','maccess','mstatic'], [c.name,tloc,c.members[i].name,mshortname,tloc,tloc,c.members[i].value,maccess,mstatic]));
+                  }
+          }
   }
 
-  function process_RegularType (c) {
-    if (!c.name || c.name.toString() == 'undefined')
-      return;
+  function process_RegularType (c)
+  {
+          if (!c.name || c.name.toString() == 'undefined')
+                  return;
 
-    // Various internal types are uninteresting for autocomplete and such
-    var tignore = 0;
-    if (/.*COMTypeInfo.*/.exec(c.name))
-      return;
+          // Various internal types are uninteresting for autocomplete and such
+          var tignore = 0;
+          if (/.*COMTypeInfo.*/.exec(c.name))
+                  return;
 
-    // Lots of types are really just instances of a handful of templates
-    // for example nsCOMPtr.  Keep track of the underlying template type
-    var ttemplate = '';
-    if (c.template)
-      ttemplate = c.template.name;
+          // Lots of types are really just instances of a handful of templates
+          // for example nsCOMPtr.  Keep track of the underlying template type
+          var ttemplate = '';
+          if (c.template)
+                  ttemplate = c.template.name;
 
-    // If this type is a typedef for something else, get that info too
-    var ttypedefname = '';
-    var ttypedefloc = '';
-    if (c.typedef) {
-      ttypedefname = c.typedef.name;
-      fix_path(c.typedef.loc);
-      // Throw away column info for types.
-      ttypedefloc = c.typedef.loc.file + ":" + c.typedef.loc.line.toString();
-    }
+          // If this type is a typedef for something else, get that info too
+          var ttypedefname = '';
+          var ttypedefloc = '';
+          if (c.typedef) {
+                  ttypedefname = c.typedef.name;
+                  fix_path(c.typedef.loc);
+                  // Throw away column info for types.
+                  ttypedefloc = c.typedef.loc.file + ":" + c.typedef.loc.line.toString();
+          }
 
-    // Only add types when seen within source (i.e., ignore all type
-    // info when used vs. declared, since we want source locations).
-    // NOTE: this also kills off dist/include/foo/nsIFoo.h autogenerated from idl.
-    // Mapping back to the idl is likely better anyhow (which MXR does now).
-    // NOTE2: there is one more case we care about: sometimes .cpp files are linked
-    // into the objdir, and linked locally (e.g., xpcom/glue), and in such cases
-    // loc will be a filename with no path.  These are useful to have after post-processing.
-    if (srcRegex.test(c.loc.file) || /^[^\/]+\.cpp$/.exec(c.loc.file) || /dist\/include/.exec(c.loc.file)) {
-      // Normalize path and throw away column info -- we just care about file + line for types.
-      fix_path(c.loc);
-      var tloc = c.loc.file + ":" + c.loc.line.toString();
+          // Only add types when seen within source (i.e., ignore all type
+          // info when used vs. declared, since we want source locations).
+          // NOTE: this also kills off dist/include/foo/nsIFoo.h autogenerated from idl.
+          // Mapping back to the idl is likely better anyhow (which MXR does now).
+          // NOTE2: there is one more case we care about: sometimes .cpp files are linked
+          // into the objdir, and linked locally (e.g., xpcom/glue), and in such cases
+          // loc will be a filename with no path.  These are useful to have after post-processing.
+          // Normalize path and throw away column info -- we just care about file + line for types.
+          fix_path(c.loc);
+          var tloc = c.loc.file + ":" + c.loc.line.toString();
 
-      // 'fixme' will be corrected in post-processing.  Can't do it here, because I need to follow
-      // symlinks to get full paths for some files.
-      sql.push(insert_stmt("types", ['tname','tloc','ttypedefname','ttypedefloc','tkind','ttemplate','tignore','tmodule'],
-                         [c.name, tloc, ttypedefname, ttypedefloc, c.kind, ttemplate, tignore, 'fixme']));
+          // 'fixme' will be corrected in post-processing.  Can't do it here, because I need to follow
+          // symlinks to get full paths for some files.
+          sql.push(insert_stmt("types", ['tname','tloc','ttypedefname','ttypedefloc','tkind','ttemplate','tignore','tmodule'],
+                                  [c.name, tloc, ttypedefname, ttypedefloc, c.kind, ttemplate, tignore, 'fixme']));
 
-      if (c.members)
-        print_members(c, c.members);
+          if (c.members)
+                  print_members(c, c.members);
 
-      if (c.bases)
-        print_all_bases(c, c.bases, true);
-    }
+          if (c.bases)
+                  print_all_bases(c, c.bases, true);
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////
 // Def
-function process_function(decl, body) {
-  // Only worry about members in the source tree (e.g., ignore /usr/... or /dist/include)
-  if (!/.*\/dist\/include.*/.exec(decl.loc.file) && srcRegex.test(decl.loc.file)) {
-    fix_path(decl.loc);
-    var floc = decl.loc.file + ":" + decl.loc.line.toString();
+//////////////////////////////////////////////////////////////////////////////
+function process_function(decl, body)
+{
+        // Only worry about members in the source tree (e.g., ignore /usr/... or /dist/include)
+        if ( /.*\/dist\/include.*/.exec(decl.loc.file)
+        ||  srcRegex.test(decl.loc.file))
+                return ;
 
-    if (decl.isStatic && !decl.memberOf) {
-      // file-scope static
-//      sql.push(insert_stmt("funcs", ['fname','floc'], [decl.name, floc]));
-      sql.push(insert_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mvalue','maccess','mstatic'], ['[File Scope Static]',decl.loc.file,decl.name,decl.shortname,floc,'','','1']));
-    } else { // regular member in the src
-      var m = parse_name(decl);
-      var mtloc = 'no_loc'; // XXX: does this case really matter (i.e., won't memberOf.loc always exist)?
-      if (decl.memberOf && decl.memberOf.loc) {
-        fix_path(decl.memberOf.loc)
-        mtloc = decl.memberOf.loc.file + ":" + decl.memberOf.loc.line.toString();
-      }
+        fix_path(decl.loc);
+        var floc = decl.loc.file + ":" + decl.loc.line.toString();
 
-      var update = "update or abort members set mdef=" + quote(floc);
-      update += " where mtname=" + quote(m.mtname) + " and mtloc=" + quote(mtloc) + " and mname=" + quote(m.mname) + ";";
+        if (decl.isStatic && !decl.memberOf) {
+                // file-scope static
+                //    sql.push(insert_stmt("funcs", ['fname','floc'], [decl.name, floc]));
+                sql.push(insert_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mvalue','maccess','mstatic'], ['[File Scope Static]',decl.loc.file,decl.name,decl.shortname,floc,'','','1']));
+        } else { // regular member in the src
+                var m = parse_name(decl);
+                var mtloc = 'no_loc'; // XXX: does this case really matter (i.e., won't memberOf.loc always exist)?
+                if (decl.memberOf && decl.memberOf.loc) {
+                        fix_path(decl.memberOf.loc);
+                        mtloc = decl.memberOf.loc.file + ":" + decl.memberOf.loc.line.toString();
+                }
 
-      sql.push(update);
-    }
+                var update = "update or abort members set mdef=" + quote(floc);
+                update += " where mtname=" + quote(m.mtname) + " and mtloc=" + quote(mtloc) + " and mname=" + quote(m.mname) + ";";
 
-    function processStatements(stmts) {
-
-      function processVariable(s, /* optional */ loc) {
-        // if name is undef, skip this
-        if (!s.name)
-          return;
-
-        // TODO: should I figure out what is going on here?  Sometimes type is null...
-        if (!s.type)
-          return;
-
-        // Skip gcc temporaries
-        if (s.isArtificial)
-          return;
-
-        // if loc is defined (e.g., we're in an .assign statement[], use that instead).
-        var vloc = loc || stmts.loc;
-
-        if (!vloc)
-          return;
-
-        var vname = s.name;
-
-        // Ignore statements and other things we can't easily link in the source.
-        if ( (/:?:?operator/.exec(vname))    ||      /* overloaded operators */
-             (/^D_[0-9]+$/.exec(vname))      ||      /* gcc temporaries */
-             (/^_ZTV.*$/.exec(vname))        ||      /* vtable vars */
-             (/.*COMTypeInfo.*/.exec(vname)) ||      /* ignore COMTypeInfo<int> */
-             ('this' == vname)          ||
-             (/^__built_in.*$/.exec(vname)) )        /* gcc built-ins */
-          return;
-
-        var vtype = '';
-        var vtloc = '';
-        var vmember = '';
-        var vmemberloc = '';
-        var vdeclloc = '';
-
-        if (s.type && s.type.loc)
-          fix_path(s.type.loc);
-
-        // Special case these smart pointer types: nsCOMPtr, nsRefPtr, nsMaybeWeakPtr, and nsAutoPtr.
-        // This is a hack, and very Mozilla specific, but lets us treat these as if they were regular
-        // pointer types.
-        if ((/^nsCOMPtr</.exec(s.type.name) ||
-             /^nsRefPtr</.exec(s.type.name) ||
-             /^nsAutoPtr</.exec(s.type.name) ||
-             /^nsMaybeWeakPtr</.exec(s.type.name)) && s.type.template) {
-          // Use T in nsCOMPtr<T>.
-          vtype = s.type.template.arguments[0].name + "*";  // it's really a pointer, so add *
-          vtloc = s.type.template.arguments[0].loc;
-          // Increase the column, since we'll hit this spot multiple times otherwise
-          // (e.g., once for nsCOMPtr and one for internal type.)  This prevents primary key dupes.
-          vloc.column++;
-        } else if (/::/.exec(s.name)) {
-          var parts = parse_name(s);
-          vtype = s.type.name;
-          vtloc = s.type.loc;
-          if (s.memberOf && s.memberOf.loc) {
-            fix_path(s.memberOf.loc);
-            vmember = s.memberOf.name;
-            vmemberloc = s.memberOf.loc.file + ":" + s.memberOf.loc.line.toString();
-          }
-          vname = parts.mname ? parts.mname : vname;
-        } else {
-          if (s.type.isPointer) {
-            vtype = s.type.type.name;
-            vtloc = s.type.type.loc;
-          } else {
-            vtype = s.type.name;
-            vtloc = s.type.loc;
-          }
+                sql.push(update);
         }
 
-        if (s.fieldOf && !vtloc)
-          vtloc = s.fieldOf.type.loc;
+        function processStatements(stmts)
+        {
+                function processVariable(s, /* optional */ loc)
+                {
+                        // if name is undef, skip this
+                        if (!s.name) return;
 
-        // TODO: why are these null sometimes?
-        //      if (vloc) {
-        fix_path(vloc);
-        var vlocf = vloc.file;
-        var vlocl = vloc.line;
-        var vlocc = vloc.column;
+                        // TODO: should I figure out what is going on here?  Sometimes type is null...
+                        if (!s.type) return;
 
-        // There may be no type, so no vtloc
-        vtype = vtype || '';
-        if (vtloc) {
-          fix_path(vtloc);
-          vtloc = vtloc.file + ":" + vtloc.line.toString();
+                        // Skip gcc temporaries
+                        if (s.isArtificial) return;
+
+                        // if loc is defined (e.g., we're in an .assign statement[], use that instead).
+                        var vloc = loc || stmts.loc;
+
+                        if (!vloc) return;
+
+                        var vname = s.name;
+
+                        // Ignore statements and other things we can't easily link in the source.
+                        if ( (/:?:?operator/.exec(vname))      /* overloaded operators */
+                        || (/^D_[0-9]+$/.exec(vname))            /* gcc temporaries */
+                        || (/^_ZTV.*$/.exec(vname))              /* vtable vars */
+                        || (/.*COMTypeInfo.*/.exec(vname))       /* ignore COMTypeInfo<int> */
+                        || ('this' == vname)
+                        || (/^__built_in.*$/.exec(vname)) )      /* gcc built-ins */
+                                return;
+
+                        var vtype = '';
+                        var vtloc = '';
+                        var vmember = '';
+                        var vmemberloc = '';
+                        var vdeclloc = '';
+
+                        if (s.type && s.type.loc)
+                                fix_path(s.type.loc);
+
+                        // Special case these smart pointer types: nsCOMPtr, nsRefPtr, nsMaybeWeakPtr, and nsAutoPtr.
+                        // This is a hack, and very Mozilla specific, but lets us treat these as if they were regular
+                        // pointer types.
+                        if ((/^nsCOMPtr</.exec(s.type.name)
+                        || /^nsRefPtr</.exec(s.type.name)
+                        || /^nsAutoPtr</.exec(s.type.name)
+                        || /^nsMaybeWeakPtr</.exec(s.type.name)) && s.type.template)
+                        {
+                                // Use T in nsCOMPtr<T>.
+                                vtype = s.type.template.arguments[0].name + "*";  // it's really a pointer, so add *
+                                vtloc = s.type.template.arguments[0].loc;
+                                // Increase the column, since we'll hit this spot multiple times otherwise
+                                // (e.g., once for nsCOMPtr and one for internal type.)  This prevents primary key dupes.
+                                vloc.column++;
+                        } else if (/::/.exec(s.name))
+                        {
+                                var parts = parse_name(s);
+                                vtype = s.type.name;
+                                vtloc = s.type.loc;
+                                if (s.memberOf && s.memberOf.loc)
+                                {
+                                        fix_path(s.memberOf.loc);
+                                        vmember = s.memberOf.name;
+                                        vmemberloc = s.memberOf.loc.file + ":" + s.memberOf.loc.line.toString();
+                                }
+                                vname = parts.mname ? parts.mname : vname;
+                        } else
+                        {
+                                if (s.type.isPointer)
+                                {
+                                        vtype = s.type.type.name;
+                                        vtloc = s.type.type.loc;
+                                } else
+                                {
+                                        vtype = s.type.name;
+                                        vtloc = s.type.loc;
+                                }
+                        }
+
+                        if (s.fieldOf && !vtloc)
+                                vtloc = s.fieldOf.type.loc;
+
+                        // TODO: why are these null sometimes?
+                        //      if (vloc) 
+                        fix_path(vloc);
+                        var vlocf = vloc.file;
+                        var vlocl = vloc.line;
+                        var vlocc = vloc.column;
+
+                        // There may be no type, so no vtloc
+                        vtype = vtype || '';
+                        if (vtloc) {
+                                fix_path(vtloc);
+                                vtloc = vtloc.file + ":" + vtloc.line.toString();
+                        }
+
+                        if (s.loc) {
+                                fix_path(s.loc);
+                                vdeclloc = s.loc.file + ":" + s.loc.line.toString();
+                        }
+
+                        var vfuncloc = decl.loc.file + ":" + decl.loc.line.toString();
+                        var vshortname = s.shortName; //vname.replace(/\(.*$/, '');
+                        var visFcall = s.isFcall ? 1 : -1;
+
+                        sql.push (insert_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc','vmember','vmemberloc','visFcall','vdeclloc'],
+                                                [decl.name, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc, vmember, vmemberloc, visFcall, vdeclloc]));
+
+                        // Deal with args to functions called by this var (i.e., function call, get a and b for g(a, b))
+                        if (s.arguments) {
+                                vloc.column += vname.length;
+                                for (var k = 0; k < s.arguments.length; k++) {
+                                        vloc.column += k + 1; // just to indicate "further"
+                                        processVariable(s.arguments[k], vloc);
+                                }
+                        }
+
+                        // Deal with any .assign variables (e.g., y = x ? a : b);
+                        if (s.assign) {
+                                vloc.column += vname.length;
+                                for (var k = 0; k < s.assign.length; k++) {
+                                        vloc.column += k + 1; // just to indicate "further"
+                                        processVariable(s.assign[k], vloc);
+                                }
+                        }
+                }
+
+                for(var j = 0; j < stmts.statements.length; j++) {
+                        var s = stmts.statements[j];
+                        // advance the column on this line by one to indicate we're "further" right/down
+                        if (stmts.loc)
+                                stmts.loc.column += j;
+                        processVariable(s);
+                }
+
+                for (var i = 0; i < body.length; i++) {
+                        processStatements(body[i]);
+                }
         }
-
-        if (s.loc) {
-          fix_path(s.loc);
-          vdeclloc = s.loc.file + ":" + s.loc.line.toString();
-        }
-
-        var vfuncloc = decl.loc.file + ":" + decl.loc.line.toString();
-        var vshortname = s.shortName; //vname.replace(/\(.*$/, '');
-        var visFcall = s.isFcall ? 1 : -1;
-
-        sql.push (insert_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc','vmember','vmemberloc','visFcall','vdeclloc'],
-                              [decl.name, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc, vmember, vmemberloc, visFcall, vdeclloc]));
-
-        // Deal with args to functions called by this var (i.e., function call, get a and b for g(a, b))
-        if (s.arguments) {
-          vloc.column += vname.length;
-          for (var k = 0; k < s.arguments.length; k++) {
-            vloc.column += k + 1; // just to indicate "further"
-            processVariable(s.arguments[k], vloc);
-          }
-        }
-
-        // Deal with any .assign variables (e.g., y = x ? a : b);
-        if (s.assign) {
-          vloc.column += vname.length;
-          for (var k = 0; k < s.assign.length; k++) {
-            vloc.column += k + 1; // just to indicate "further"
-            processVariable(s.assign[k], vloc);
-          }
-        }
-      }
-
-      for(var j = 0; j < stmts.statements.length; j++) {
-        var s = stmts.statements[j];
-        // advance the column on this line by one to indicate we're "further" right/down
-        if (stmts.loc)
-          stmts.loc.column += j;
-        processVariable(s);
-      }
-    }
-
-    for (var i = 0; i < body.length; i++) {
-      processStatements(body[i]);
-    }
-  }
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
 function input_end() {
   // This assumes |sort -u| will be called to get INSERT and UPDATES in right order
   write_file (sys.aux_base_name + ".sql", sql.join("\n") + "\n");
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
 function print_all_bases(t, bases, direct) {
   // Keep track of whether this is a direct child of the base vs. many levels deep
   var directBase = direct ? 1 : -1;
@@ -404,6 +422,8 @@ function print_all_bases(t, bases, direct) {
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
 function print_members(t, members) {
   for (var i = 0; i < members.length; i++) {
     var m = parse_name(members[i]);
@@ -414,11 +434,11 @@ function print_members(t, members) {
     if (!/.*\/dist\/include.*/.exec(members[i].loc.file) && srcRegex.test(members[i].loc.file)) {
       // if this is static, ignore the reported decl in the compilation unit.
       // .isStatic will only be reported in the containing compilation unit.
-//      if (!members[i].isStatic) {
+      // if (!members[i].isStatic) {
         fix_path(members[i].loc);
         var loc = members[i].loc.file + ":" + members[i].loc.line.toString();
         var mvalue = members[i].value || ''; // enum members have a value
-      var mstatic = members[i].isStatic ? 1 : -1;
+        var mstatic = members[i].isStatic ? 1 : -1;
         if (!members[i].isFunction || (members[i].isFunction && members[i].isExtern)) {
           // This is being seen via an #include vs. being done here in full, so just get decl loc
           var mshortname = m.mname.replace(/\(.*$/, '');
@@ -434,6 +454,8 @@ function print_members(t, members) {
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
 function parse_name(c) {
   var result = {};
 
@@ -455,6 +477,8 @@ function parse_name(c) {
   return result;
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
 function fix_path(loc) {
   // loc is {file: 'some/path', line: #, column: #}.  Normalize paths as follows:
   // from: /home/dave/gcc-dehydra/installed/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.3.0/../../../../include/c++/4.3.0/exception:59
@@ -486,6 +510,8 @@ function fix_path(loc) {
   loc.file = fixed;
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
 function insert_stmt(table, cols, vals) {
   var stmt = "insert or abort into " + table;
   if (cols) stmt += " " + build_list(cols);
@@ -493,6 +519,8 @@ function insert_stmt(table, cols, vals) {
   return stmt;
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
 function build_list(a) {
   var l = "(";
   for (var i = 0; i < a.length; i++) {
@@ -504,6 +532,8 @@ function build_list(a) {
   return l;
 }
 
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
 function quote(s) {
   return "'" + s + "'";
 }
