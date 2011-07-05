@@ -18,9 +18,14 @@ def get_active_plugins(tree=None, dxrsrc=None):
     if dxrsrc is None and tree is not None:
       dxrsrc = tree.dxrroot
     all_plugins = load_plugins(dxrsrc)
-
+  if dxrsrc is None and tree is not None:
+    dxrsrc = tree.dxrroot
+  if dxrsrc == None:
+    print "dxrsrc is not set"
+    return None
+  config = load_config(os.path.join(dxrsrc,'dxr.config'))
   def plugin_filter(module):
-    return module.can_use(tree)
+    return (module.__name__ not in config.disabled_plugins) and module.can_use(tree)
   return filter(plugin_filter, all_plugins)
 
 def load_plugins(dxrsrc=None):
@@ -87,6 +92,11 @@ class DxrConfig(object):
     else:
       self.dxrroot = None
 
+    if config.has_option('plugins','disable'):
+      self.disabled_plugins = config.get('plugins', 'disable').split(' ')
+    else:
+      self.disabled_plugins = []
+
     self.wwwdir = os.path.abspath(config.get('Web', 'wwwdir'))
     self.virtroot = os.path.abspath(config.get('Web', 'virtroot'))
     if self.virtroot.endswith('/'):
@@ -98,7 +108,9 @@ class DxrConfig(object):
     if tree is None:
       self.trees = []
       for section in config.sections():
-        if section == 'DXR' or section == 'Web':
+        if section == 'DXR' \
+        or section == 'Web' \
+        or section == 'plugins':
           continue
         self.trees.append(DxrConfig(config, section))
     else:
@@ -139,16 +151,21 @@ class DxrConfig(object):
 
 def readFile(filename):
   try:
-    fp = open(filename)
+    fp = open(filename,"r")
     try:
       return fp.read()
     finally:
       fp.close()
   except IOError:
     print('Error reading %s: %s' % (filename, sys.exc_info()[1]))
+    raise IOError('Error reading %s: %s' % (filename, sys.exc_info()[1]))
     return None
 
 def load_config(path):
+  if not os.path.exists(path):
+    print('Error reading %s: No such file or directory' % path)
+    raise IOError('Error reading %s: No such file or directory' % path)
+    return None
   config = ConfigParser()
   config.read(path)
 

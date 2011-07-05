@@ -218,7 +218,7 @@ def post_process(srcdir, objdir):
   for f in file_names:
     load_indexer_output(f)
   blob = make_blob()
-  
+
   # Reindex everything by file
   def schema():
     return { "scopes": [], "functions": [], "variables": [], "types": [],

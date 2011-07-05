@@ -29,7 +29,7 @@ def default_can_use(treecfg):
 
 def default_get_htmlifiers():
   """ Returns source code htmlifiers that this plugin uses.
-      
+
       The return value is a dictionary of { file-ending: htmlifier } values.
       An htmlifier is a dictionary consisting of the following keys, whose
       values are functions which receive (blob, srcpath, treeconfig)
@@ -81,7 +81,7 @@ class Schema:
 
       The input schema is a dictionary whose keys are the table names and whose
       values are dictionaries for table schemas.
-      
+
       This class interprets blob data as a dictionary of tables; each table is
       either a dictionary of {key:row} elements or a list of {key:row} elements.
       The rows are dictionaries of {col:value} elements; only those values that
@@ -114,7 +114,7 @@ class SchemaTable:
           may have special values
         mayBeNull is an optional attribute that specifies if the column may
           contain null values. not specifying is equivalent to True
-      
+
       Any column name that begins with a `_' is metadata about the table:
         _key: the result tuple is a tuple for the primary key of the table.
 
@@ -143,7 +143,7 @@ class SchemaTable:
       if col == '_key':
         self.key = spec
       elif col[0] != '_':
-        # if spec is deficient, we need to full it in with default tuples
+        # if spec is deficient, we need to fill it in with default tuples
         values = list(spec)
         if len(spec) < len(defaults):
           values.extend(defaults[len(spec):])
