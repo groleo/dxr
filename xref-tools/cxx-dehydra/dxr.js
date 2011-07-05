@@ -23,7 +23,8 @@ nsAccessible print_members() mtname=nsAccessible mname=mAccChildCount loc=/home/
 var srcroot = "/src/dxr/";
 var srcRegex = new RegExp("^" + srcroot);
 
-var sql = [];
+//var sql = [];
+var csv = [];
 
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
@@ -32,6 +33,10 @@ function process_decl (d)
   // skip things like /home/dave/dxr/tools/gcc-dehydra/installed/include/c++/4.3.0/exception
   if (srcRegex.test(d.loc.file))
     return;
+
+  if (! d.isFunction)
+        return ;
+
   // Skip things we don't care about
   if ( (/:?:?operator.*$/.exec(d.name)) ||      /* overloaded operators */
        (/^D_[0-9]+$/.exec(d.name))      ||      /* gcc temporaries */
@@ -41,62 +46,67 @@ function process_decl (d)
        (/^__built_in.*$/.exec(d.name)) )        /* gcc built-ins */
     return;
 
-  if (d.isFunction) {
-    // Treat the decl of a func like one of the statements in the func so we can link params
-    var vfuncname = d.name;
-    fix_path(d.loc);
-    var vfuncloc = d.loc.file + ":" + d.loc.line.toString();
+  // Treat the decl of a func like one of the statements in the func so we can link params
+  var vfuncname = d.name;
+  fix_path(d.loc);
+  var vfuncloc = d.loc.file + ":" + d.loc.line.toString();
 
-    // Treat the actual func decl as a statement so we can easily linkify it
-    var vtype = '';
-    var vname = d.name;
+  // Treat the actual func decl as a statement so we can easily linkify it
+  var vtype = '';
+  var vname = d.name;
 
-    if (/::/.exec(vname)) {
-      var parts = parse_name(d);
-      vtype = parts.mtname || vtype;
-      vname = parts.mname || vname;
+  if (/::/.exec(vname)) {
+    var parts = parse_name(d);
+    vtype = parts.mtname || vtype;
+    vname = parts.mname || vname;
+  }
+
+  var vshortname = vname.replace(/\(.*$/, '');
+  var vlocf = d.loc.file;
+  var vlocl = d.loc.line;
+  var vlocc = d.loc.column;
+  var vtloc = '';
+
+  if (d.memberOf && d.memberOf.loc) {
+    fix_path(d.memberOf.loc);
+    vtloc = d.memberOf.loc.file + ":" + d.memberOf.loc.line.toString();
+  }
+
+  //sql.push (
+  //insert_sql_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc','visFcall','visDecl'],
+  //                      [vfuncname, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc,-1,1])
+  //);
+  csv.push (
+  insert_csv_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc','visFcall','visDecl'],
+                        [vfuncname, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc,-1,1]));
+
+  if (!d.parameters)
+    return;
+
+  // Keep track of all params in the function
+  for(var i = 0; i < d.parameters.length; i++) {
+    vname = d.parameters[i].name;
+
+    // we'll skip |this| and treat it as a keyword instead
+    if ('this' == vname)
+      continue;
+
+    vshortname = vname.replace(/\(.*$/, '');  // XXX: will vname not always be the same in this case?
+    vlocf = d.loc.file;
+    vlocl = d.loc.line;
+    d.loc.column++ // col is never accurate, but indicates "further"
+    vlocc = d.loc.column;
+    vtype = '';
+    vtloc = '';
+    if (d.parameters[i].type) {
+      vtype = d.parameters[i].type.name;
+      vtloc = d.parameters[i].type.loc ? d.parameters[i].type.loc.file + ":" + d.parameters[i].type.loc.line.toString() : '';
     }
 
-    var vshortname = vname.replace(/\(.*$/, '');
-    var vlocf = d.loc.file;
-    var vlocl = d.loc.line;
-    var vlocc = d.loc.column;
-    var vtloc = '';
-
-    if (d.memberOf && d.memberOf.loc) {
-      fix_path(d.memberOf.loc);
-      vtloc = d.memberOf.loc.file + ":" + d.memberOf.loc.line.toString();
-    }
-
-    sql.push (insert_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc','visFcall','visDecl'],
-                          [vfuncname, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc,-1,1]));
-
-    if (!d.parameters)
-      return;
-
-    // Keep track of all params in the function
-    for(var i = 0; i < d.parameters.length; i++) {
-      vname = d.parameters[i].name;
-
-      // we'll skip |this| and treat it as a keyword instead
-      if ('this' == vname)
-        continue;
-
-      vshortname = vname.replace(/\(.*$/, '');  // XXX: will vname not always be the same in this case?
-      vlocf = d.loc.file;
-      vlocl = d.loc.line;
-      d.loc.column++ // col is never accurate, but indicates "further"
-      vlocc = d.loc.column;
-      vtype = '';
-      vtloc = '';
-      if (d.parameters[i].type) {
-        vtype = d.parameters[i].type.name;
-        vtloc = d.parameters[i].type.loc ? d.parameters[i].type.loc.file + ":" + d.parameters[i].type.loc.line.toString() : '';
-      }
-
-      sql.push (insert_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc', 'visFcall', 'visDecl'],
-                            [vfuncname, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc, -1, 1]));
-    }
+    //sql.push (insert_sql_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc', 'visFcall', 'visDecl'],
+    //                      [vfuncname, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc, -1, 1]));
+    csv.push (insert_csv_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc', 'visFcall', 'visDecl'],
+                          [vfuncname, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc, -1, 1]));
   }
 }
 
@@ -139,8 +149,14 @@ function process_type (c)
 
           var tignore = 0;
 
-          sql.push(insert_stmt("types", ['tname','tloc','ttypedefname','ttypedefloc','tkind','ttemplate','tignore','tmodule'],
-                                  [c.name, tloc, ttypedefname, ttypedefloc, 'typedef', ttemplate, tignore, 'fixme']));
+          //sql.push(
+          //  insert_sql_stmt("types", ['tname','tloc','ttypedefname','ttypedefloc','tkind','ttemplate','tignore','tmodule'],
+          //                        [c.name, tloc, ttypedefname, ttypedefloc, 'typedef', ttemplate, tignore, 'fixme'])
+          //);
+          csv.push (
+            insert_csv_stmt("type", ['tname','tloc','ttypedefname','ttypedefloc','tkind','ttemplate','tignore','tmodule'],
+                                  [c.name, tloc, ttypedefname, ttypedefloc, 'typedef', ttemplate, tignore, 'fixme'])
+          );
   }
 
   function process_EnumType (c) {
@@ -153,7 +169,9 @@ function process_type (c)
 
           // 'fixme' will be corrected in post-processing.  Can't do it here, because I need to follow
           // symlinks to get full paths for some files.
-          sql.push(insert_stmt("types", ['tname','tloc','tkind','tmodule'],
+          //sql.push(insert_sql_stmt("types", ['tname','tloc','tkind','tmodule'],
+          //                        [c.name, tloc, c.kind, 'fixme']));
+          csv.push(insert_csv_stmt("types", ['tname','tloc','tkind','tmodule'],
                                   [c.name, tloc, c.kind, 'fixme']));
 
           if (c.members) {
@@ -162,7 +180,8 @@ function process_type (c)
                           var mshortname = c.members[i].name.replace(/\(.*$/, '');
                           var mstatic = c.members[i].isStatic ? 1 : -1;
                           var maccess = c.members[i].access || '';
-                          sql.push(insert_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mdef','mvalue','maccess','mstatic'], [c.name,tloc,c.members[i].name,mshortname,tloc,tloc,c.members[i].value,maccess,mstatic]));
+                          //sql.push(insert_sql_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mdef','mvalue','maccess','mstatic'], [c.name,tloc,c.members[i].name,mshortname,tloc,tloc,c.members[i].value,maccess,mstatic]));
+                          csv.push(insert_csv_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mdef','mvalue','maccess','mstatic'], [c.name,tloc,c.members[i].name,mshortname,tloc,tloc,c.members[i].value,maccess,mstatic]));
                   }
           }
   }
@@ -206,7 +225,9 @@ function process_type (c)
 
           // 'fixme' will be corrected in post-processing.  Can't do it here, because I need to follow
           // symlinks to get full paths for some files.
-          sql.push(insert_stmt("types", ['tname','tloc','ttypedefname','ttypedefloc','tkind','ttemplate','tignore','tmodule'],
+          //sql.push(insert_sql_stmt("types", ['tname','tloc','ttypedefname','ttypedefloc','tkind','ttemplate','tignore','tmodule'],
+          //                        [c.name, tloc, ttypedefname, ttypedefloc, c.kind, ttemplate, tignore, 'fixme']));
+          csv.push(insert_csv_stmt("types", ['tname','tloc','ttypedefname','ttypedefloc','tkind','ttemplate','tignore','tmodule'],
                                   [c.name, tloc, ttypedefname, ttypedefloc, c.kind, ttemplate, tignore, 'fixme']));
 
           if (c.members)
@@ -225,27 +246,28 @@ function process_function(decl, body)
         // Only worry about members in the source tree (e.g., ignore /usr/... or /dist/include)
         if ( /.*\/dist\/include.*/.exec(decl.loc.file)
         ||  srcRegex.test(decl.loc.file))
-                return ;
+          return ;
 
         fix_path(decl.loc);
         var floc = decl.loc.file + ":" + decl.loc.line.toString();
 
         if (decl.isStatic && !decl.memberOf) {
-                // file-scope static
-                //    sql.push(insert_stmt("funcs", ['fname','floc'], [decl.name, floc]));
-                sql.push(insert_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mvalue','maccess','mstatic'], ['[File Scope Static]',decl.loc.file,decl.name,decl.shortname,floc,'','','1']));
+          // file-scope static
+          //    sql.push(insert_sql_stmt("funcs", ['fname','floc'], [decl.name, floc]));
+          //sql.push(insert_sql_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mvalue','maccess','mstatic'], ['[File Scope Static]',decl.loc.file,decl.name,decl.shortname,floc,'','','1']));
+          csv.push(insert_csv_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mvalue','maccess','mstatic'], ['[File Scope Static]',decl.loc.file,decl.name,decl.shortname,floc,'','','1']));
         } else { // regular member in the src
-                var m = parse_name(decl);
-                var mtloc = 'no_loc'; // XXX: does this case really matter (i.e., won't memberOf.loc always exist)?
-                if (decl.memberOf && decl.memberOf.loc) {
-                        fix_path(decl.memberOf.loc);
-                        mtloc = decl.memberOf.loc.file + ":" + decl.memberOf.loc.line.toString();
-                }
+          var m = parse_name(decl);
+          var mtloc = 'no_loc'; // XXX: does this case really matter (i.e., won't memberOf.loc always exist)?
+          if (decl.memberOf && decl.memberOf.loc) {
+            fix_path(decl.memberOf.loc);
+            mtloc = decl.memberOf.loc.file + ":" + decl.memberOf.loc.line.toString();
+          }
 
-                var update = "update or abort members set mdef=" + quote(floc);
-                update += " where mtname=" + quote(m.mtname) + " and mtloc=" + quote(mtloc) + " and mname=" + quote(m.mname) + ";";
+          var update = "update or abort members set mdef=" + quote(floc);
+          update += " where mtname=" + quote(m.mtname) + " and mtloc=" + quote(mtloc) + " and mname=" + quote(m.mname) + ";";
 
-                sql.push(update);
+          sql.push(update);
         }
 
         function processStatements(stmts)
@@ -351,7 +373,9 @@ function process_function(decl, body)
                         var vshortname = s.shortName; //vname.replace(/\(.*$/, '');
                         var visFcall = s.isFcall ? 1 : -1;
 
-                        sql.push (insert_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc','vmember','vmemberloc','visFcall','vdeclloc'],
+                        //sql.push (insert_sql_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc','vmember','vmemberloc','visFcall','vdeclloc'],
+                        //                        [decl.name, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc, vmember, vmemberloc, visFcall, vdeclloc]));
+                        csv.push (insert_csv_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc','vmember','vmemberloc','visFcall','vdeclloc'],
                                                 [decl.name, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc, vmember, vmemberloc, visFcall, vdeclloc]));
 
                         // Deal with args to functions called by this var (i.e., function call, get a and b for g(a, b))
@@ -391,7 +415,8 @@ function process_function(decl, body)
 //////////////////////////////////////////////////////////////////////////////
 function input_end() {
   // This assumes |sort -u| will be called to get INSERT and UPDATES in right order
-  write_file (sys.aux_base_name + ".sql", sql.join("\n") + "\n");
+  //write_file (sys.aux_base_name + ".sql", sql.join("\n") + "\n");
+  write_file (sys.aux_base_name + ".csv", "#empty\n" +csv.join("\n") + "\n");
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -413,7 +438,9 @@ function print_all_bases(t, bases, direct) {
       tcloc = t.loc.file + ":" + t.loc.line.toString();
     }
 
-    sql.push (insert_stmt("impl", ['tbname','tbloc','tcname','tcloc','direct'],
+    //sql.push (insert_sql_stmt("impl", ['tbname','tbloc','tcname','tcloc','direct'],
+    //                              [bases[i].type.name,tbloc,t.name,tcloc,directBase]));
+    csv.push (insert_csv_stmt("impl", ['tbname','tbloc','tcname','tcloc','direct'],
                                   [bases[i].type.name,tbloc,t.name,tcloc,directBase]));
     if (bases[i].type.bases) {
       // pass t instead of base[i].name so as to flatten the inheritance tree for t
@@ -434,7 +461,7 @@ function print_members(t, members) {
     if (!/.*\/dist\/include.*/.exec(members[i].loc.file) && srcRegex.test(members[i].loc.file)) {
       // if this is static, ignore the reported decl in the compilation unit.
       // .isStatic will only be reported in the containing compilation unit.
-      // if (!members[i].isStatic) {
+//       if (!members[i].isStatic) {
         fix_path(members[i].loc);
         var loc = members[i].loc.file + ":" + members[i].loc.line.toString();
         var mvalue = members[i].value || ''; // enum members have a value
@@ -442,12 +469,14 @@ function print_members(t, members) {
         if (!members[i].isFunction || (members[i].isFunction && members[i].isExtern)) {
           // This is being seen via an #include vs. being done here in full, so just get decl loc
           var mshortname = m.mname.replace(/\(.*$/, '');
-          sql.push(insert_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mvalue','maccess','mstatic'], [m.mtname,tloc,m.mname,mshortname,loc,mvalue,members[i].access,mstatic]));
+          //sql.push(insert_sql_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mvalue','maccess','mstatic'], [m.mtname,tloc,m.mname,mshortname,loc,mvalue,members[i].access,mstatic]));
+          csv.push(insert_csv_stmt("members", ['mtname','mtloc','mname','mshortname','mdecl','mvalue','maccess','mstatic'], [m.mtname,tloc,m.mname,mshortname,loc,mvalue,members[i].access,mstatic]));
         } else {
           // This is an implementation, not a decl loc, update def (we'll get decl elsewhere)
+          print ("UPDATE\n");
           var update = "update or abort members set mdef=" + quote(loc);
           update += " where mtname=" + quote(m.mtname) + " and mtloc=" + quote(tloc) + " and mname=" + quote(m.mname) + ";";
-          sql.push(update);
+          //sql.push(update);
         }
 //      }
     }
@@ -512,13 +541,19 @@ function fix_path(loc) {
 
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
-function insert_stmt(table, cols, vals) {
+function insert_sql_stmt(table, cols, vals) {
   var stmt = "insert or abort into " + table;
   if (cols) stmt += " " + build_list(cols);
   stmt += " values" + build_list(vals) + ";";
   return stmt;
 }
-
+function insert_csv_stmt(table,cols,vals) {
+  var stmt ="";
+  for ( var i=0; i< cols.length; i++) {
+      stmt += cols[i]+','+'"'+vals[i]+'",' ;
+  }
+  return stmt ;
+}
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
 function build_list(a) {
