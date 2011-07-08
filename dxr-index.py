@@ -2,6 +2,7 @@
 
 from multiprocessing import cpu_count
 from multiprocessing.pool import ThreadPool as Pool
+from itertools import chain
 import os
 import sys
 import getopt
@@ -65,7 +66,7 @@ def async_toHTML(treeconfig, srcpath, dstfile):
   try:
     dxr.htmlbuilders.make_html(srcpath, dstfile, treeconfig, big_blob)
   except Exception, e:
-    print str(e)
+    print 'Error on file %s:' % srcpath
     import traceback
     traceback.print_exc()
 
@@ -76,7 +77,9 @@ def make_index(file_list, dbdir):
   # since we don't have the syscall penalties for opening and closing every
   # file.
   file_index = open(os.path.join(dbdir, "file_index.txt"), 'w')
+  offset_index = open(os.path.join(dbdir, "index_index.txt"), 'w')
   for fname in file_list:
+    offset_index.write('%s:%d\n' % (fname[0], file_index.tell()))
     f = open(fname[1], 'r')
     lineno = 1
     for line in f:
@@ -86,6 +89,7 @@ def make_index(file_list, dbdir):
     if line[-1] != '\n':
       file_index.write('\n');
     f.close()
+  offset_index.close()
   file_index.close()
 
 def builddb(treecfg, dbdir):
@@ -112,7 +116,10 @@ def builddb(treecfg, dbdir):
   conn.executescript('\n'.join(schemata))
   conn.commit()
   for stmt in all_statements:
-    conn.execute(stmt)
+    if isinstance(stmt, tuple):
+      conn.execute(stmt[0], stmt[1])
+    else:
+      conn.execute(stmt)
   conn.commit()
   conn.close()
 
@@ -128,10 +135,16 @@ def indextree(treecfg, doxref, dohtml, debugfile):
     if os.path.isdir(currentroot):
       if os.path.exists(os.path.join(currentroot, '.dxr_xref', '.success')):
         # Move current -> old, change link to old
-        shutil.rmtree(oldroot)
-        shutil.move(currentroot, oldroot)
-        os.unlink(linkroot)
-        os.symlink(oldroot, linkroot)
+        try:
+          shutil.rmtree(oldroot)
+        except OSError:
+          pass
+        try:
+          shutil.move(currentroot, oldroot)
+          os.unlink(linkroot)
+          os.symlink(oldroot, linkroot)
+        except OSError:
+          pass
       else:
         # This current directory is bad, move it away
         shutil.rmtree(currentroot)
@@ -174,7 +187,21 @@ def indextree(treecfg, doxref, dohtml, debugfile):
     index_list = open(os.path.join(dbdir, "file_list.txt"), 'w')
     file_list = []
 
-    for f in treecfg.getFileList():
+    def getOutputFiles():
+      for regular in treecfg.getFileList():
+        yield regular
+      filelist = set()
+      for plug in big_blob:
+        try:
+          filelist.update(big_blob[plug]["byfile"].keys())
+        except KeyError:
+          pass
+      for filename in filelist:
+        if filename.startswith("--GENERATED--/"):
+          relpath = filename[len("--GENERATED--/"):]
+          yield filename, os.path.join(treecfg.objdir, relpath)
+
+    for f in getOutputFiles():
       # In debug mode, we only care about some files
       if debugfile is not None and f[0] != debugfile: continue
 
@@ -188,9 +215,6 @@ def indextree(treecfg, doxref, dohtml, debugfile):
       if not os.path.exists(cpydir):
         os.makedirs(cpydir)
 
-      # XXX: For now, we need the file to be in the www-dir. We should figure
-      # out how to not need to do this
-      shutil.copyfile(srcpath, cpypath)
       p.apply_async(async_toHTML, [treecfg, srcpath, cpypath + ".html"])
 
     p.apply_async(make_index, [file_list, dbdir])
@@ -201,7 +225,11 @@ def indextree(treecfg, doxref, dohtml, debugfile):
 
   # If the database is live, we need to switch the live to the new version
   if treecfg.isdblive:
-    os.unlink(linkroot)
+    try:
+      os.unlink(linkroot)
+      shutil.rmtree(oldroot)
+    except OSError:
+      pass
     os.symlink(currentroot, linkroot)
 
 def parseconfig(filename, doxref, dohtml, tree, debugfile):
