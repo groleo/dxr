@@ -1,12 +1,16 @@
 DXR
 ---
 
+
+
 Introduction:
 -------------
 
 DXR is a source code cross-reference tool that uses static analysis data
 collected by instrumented compilers.  DXR was created in order to build on
 tools like LXR and MXR.  DXR only runs on Linux for the moment.
+
+
 
 Prerequisites:
 --------------
@@ -16,6 +20,8 @@ output HTML, you will need a web-server of some kind. Individual tools have
 further requirements:
 
 cxx-clang: A copy of clang.
+
+
 
 Setup:
 ------
@@ -46,7 +52,10 @@ passing it in as the last argument to setup-env.sh
 6) Run the cross-reference generator:
 dxrsrc/dxr-index.py -f /path/to/web/dir/dxr.config
 
-7) You can optionally install sqlite 3 if it is not already installed on your system.  You don't strictly need it, but it makes accessing the database manually eaiser.
+7) You can optionally install sqlite 3 if it is not already installed on your system.
+You don't strictly need it, but it makes accessing the database manually eaiser.
+
+
 
 Running:
 -------
