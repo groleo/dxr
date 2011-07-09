@@ -253,6 +253,9 @@ def parseconfig(filename, doxref, dohtml, tree, debugfile):
 
   # Generate index page with drop-down + opensearch links for all trees
   indexhtml = dxrconfig.getTemplateFile('dxr-index-template.html')
+  print "treecfg variables available in templates"
+  for key in treecfg.__dict__:
+    print "  %s=%s" % (key,treecfg.__dict__[key])
   indexhtml = string.Template(indexhtml).safe_substitute(**treecfg.__dict__)
   indexhtml = indexhtml.replace('$OPTIONS', options)
   indexhtml = indexhtml.replace('$OPENSEARCH', opensearch)
