@@ -238,6 +238,7 @@ def parseconfig(filename, doxref, dohtml, tree, debugfile):
   options = ''
   opensearch = ''
 
+  print "Using config: %s" % filename
   dxrconfig = dxr.load_config(filename)
 
   for treecfg in dxrconfig.trees:
