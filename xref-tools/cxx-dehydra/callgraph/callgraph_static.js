@@ -1,8 +1,11 @@
 require({
     after_gcc_pass: "cfg"
 });
+include('platform.js');
+include('gcc_compat.js');
 include('gcc_util.js');
 include('gcc_print.js');
+include('map.js');
 include('unstable/lazy_types.js');
 include('unstable/dehydra_types.js');
 
@@ -36,7 +39,7 @@ function serialize_virtuals(virtuals) {
     let serial = "";
     for each(tuple in virtuals) {
         serial += 'INSERT INTO implementors (implementor, interface, method, loc) VALUES ("'
-        + serialize_class(tuple.implementor) + '", "
+        + serialize_class(tuple.implementor) + '", "'
         + serialize_class(tuple.interface) + '", "'
         + serialize_method(tuple.implementor) + '", "'
         + tuple.interface.loc + '");\n';
@@ -233,7 +236,7 @@ function location_string(decl) {
 
 function process_subclasses(c, implementor) {
     let bases = [BINFO_TYPE(base_binfo)
-    for each(base_binfo in VEC_iterate(BINFO_BASE_BINFOS(TYPE_BINFO(c))))];
+            for each (base_binfo in VEC_iterate(BINFO_BASE_BINFOS(TYPE_BINFO(c))))];
 
     for each(base in bases) {
         // for each member method...
