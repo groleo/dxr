@@ -1,6 +1,4 @@
-require({
-    after_gcc_pass: "cfg"
-});
+require({ after_gcc_pass: "cfg" });
 include('platform.js');
 include('gcc_compat.js');
 include('gcc_util.js');
@@ -9,12 +7,13 @@ include('map.js');
 include('unstable/lazy_types.js');
 include('unstable/dehydra_types.js');
 
-let DEBUG = false;
+let DEBUG = true ;
 
 let edges = [];
 let virtuals = [];
 
 function input_end() {
+    debug_print("input_end");
     let serial = serialize_edges(edges);
     serial += serialize_virtuals(virtuals);
     write_file(sys.aux_base_name + ".cg.sql", serial);
@@ -25,6 +24,7 @@ function serialize_edges(edges) {
     // { caller: { fn: "fn", rt: "rt", loc: "file" },
     //   callee: { fn: "fn", rt: "rt", loc: "file" } }
     // serialize two nodes and an edge using sql INSERT statements.
+    debug_print("serialize_edges:["+edges+"]");
     let serial = "";
     for each(edge in edges) {
         serial += push_node(edge.caller);
@@ -68,6 +68,7 @@ function ensure_string(str) {
 }
 
 function push_node(node) {
+    debug_print("push_node");
     return 'INSERT INTO node (name, returnType, namespace, type, shortName, isPtr, isVirtual, loc) VALUES ("'
     + serialize_full_method(node) + '", "'
     + ensure_string(node.rt) + '", "'
@@ -80,17 +81,19 @@ function push_node(node) {
 }
 
 function push_edge(edge) {
+    debug_print("push_edge");
     return 'INSERT INTO edge (caller, callee) VALUES (' + '(SELECT id FROM node WHERE name = "' + serialize_full_method(edge.caller) + '" AND loc = "' + edge.caller.loc + '"), ' + '(SELECT id FROM node WHERE name = "' + serialize_full_method(edge.callee) + '" AND loc = "' + edge.callee.loc + '")' + ');\n';
 }
 
 function process_tree_type(t) {
     // scan the class, and its bases, for virtual functions
-    if (!COMPLETE_TYPE_P(t)) return;
+    //if (!COMPLETE_TYPE_P(t)) { debug_print("\tincomplete type:["+class_key_or_enum_as_string(t)); return; }
 
     // check if we have a class or struct
     let kind = class_key_or_enum_as_string(t);
-    if (kind != "class" && kind != "struct") return;
+    if (kind != "class" && kind != "struct") { return; }
 
+    debug_print("process_tree_type:"+kind);
     // for each member method...
     for (let func = TYPE_METHODS(t); func; func = TREE_CHAIN(func)) {
         if (TREE_CODE(func) != FUNCTION_DECL) continue;
@@ -114,6 +117,7 @@ function process_tree_type(t) {
 }
 
 function get_names(decl) {
+    debug_print("get_names");
     // for a class, names.class and names.method will be defined.
     // for a function, names.method will be defined.
     // for either, names.ns may be defined depending on whether the context is a namespace.
@@ -219,6 +223,7 @@ function location_string(decl) {
     if (LOC_IS_BUILTIN(loc)) return "<built-in>";
 
     let path = loc.file;
+
     try {
         return resolve_path(path);
     } catch (e) {
@@ -235,6 +240,7 @@ function location_string(decl) {
 }
 
 function process_subclasses(c, implementor) {
+    debug_print("process_subclasses");
     let bases = [BINFO_TYPE(base_binfo)
             for each (base_binfo in VEC_iterate(BINFO_BASE_BINFOS(TYPE_BINFO(c))))];
 
@@ -268,17 +274,21 @@ function process_subclasses(c, implementor) {
 }
 
 function method_signatures_match(m1, m2) {
+    debug_print("method_signatures_match");
     return m1.method == m2.method && m1.params.join(",") == m2.params.join(",") && m1.rt == m2.rt;
 }
 
 function process_tree(fn) {
-    debug_print("CALLER:      " + serialize_full_method(get_names(fn)));
+    debug_print("CALLER: " + serialize_full_method(get_names(fn))
+    +' '+location_of(fn)
+    );
 
     let cfg = function_decl_cfg(fn);
     for (let bb in cfg_bb_iterator(cfg)) {
         for (let isn in bb_isn_iterator(bb)) {
             walk_tree(isn, function (t, stack) {
-                if (TREE_CODE(t) != CALL_EXPR) return;
+		print (serialize_full_method(get_names(fn))+' '+TREE_CODE(t)+' '+location_of(t));
+                if (TREE_CODE(t) != GIMPLE_CALL) { return; }
 
                 let callee = resolve_function_decl(t);
                 if (!callee) throw new Error("unresolvable function " + expr_display(t));
@@ -299,13 +309,14 @@ function process_tree(fn) {
 }
 
 function resolve_function_decl(expr) {
-    let r = CALL_EXPR_FN(expr);
+    debug_print("resolve_function_decl");
+    let r = gimple_call_fndecl(expr);
     switch (TREE_CODE(r)) {
     case OBJ_TYPE_REF:
         return resolve_virtual_fun_from_obj_type_ref(r);
     case FUNCTION_DECL:
     case ADDR_EXPR:
-        return call_function_decl(expr);
+        return gimple_call_fndecl(expr);
     case VAR_DECL:
     case PARM_DECL:
         // have a function pointer. the VAR_DECL holds the fnptr, but we're interested in the type.
