@@ -1,5 +1,6 @@
 #!/bin/sh -x
-HYDRA=dehydra
+
+HYDRA=treehydra
 DXR_JS=$DXRSRC/xref-tools/cxx-dehydra/dxr.js
 
 HYDRASO=$DXRSRC/tools/dehydra/gcc_${HYDRA}.so

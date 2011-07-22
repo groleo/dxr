@@ -11,16 +11,6 @@ def locUrl(loc):
   path, line = loc.split(':')[:2]
   return '%s/%s/%s.html#l%s' % (virtroot, tree, path, line)
 
-def getDeclarations(defid):
-  cur = conn.execute("SELECT declloc FROM decldef WHERE defid=?",(defid,))
-  decls = []
-  for declloc, in cur:
-    decls.append({ "label": "Declared at %s" % (declloc),
-      "icon": "icon-decl",
-      "url": locUrl(declloc)
-    })
-  return decls
-
 def getType(typeinfo, refs=[], deep=False):
   if isinstance(typeinfo, int):
     typeinfo = conn.execute("SELECT * FROM types WHERE tid=?",
@@ -29,12 +19,11 @@ def getType(typeinfo, refs=[], deep=False):
     "label": '%s %s' % (typeinfo['tkind'], typeinfo['tqualname']),
     "icon": "icon-type",
     "children": [{
-      "label": 'Definition at %s' % (typeinfo['tloc']),
+      "label": 'Defined at %s' % (typeinfo['tloc']),
       "icon": "icon-def",
       "url": locUrl(typeinfo['tloc'])
     }]
   }
-  typebase['children'].extend(getDeclarations(typeinfo['tid']))
   if not deep:
     return typebase
   members = {
@@ -108,12 +97,11 @@ def getVariable(varinfo, refs=[]):
     "label": '%s %s' % (varinfo['vtype'], varinfo['vname']),
     "icon": "icon-member",
     "children": [{
-      "label": 'Definition at %s' % (varinfo['vloc']),
+      "label": 'Defined at %s' % (varinfo['vloc']),
       "icon": "icon-def",
       "url": locUrl(varinfo['vloc'])
     }]
   }
-  varbase['children'].extend(getDeclarations(varinfo['varid']))
   refnode = {
     "label": "References",
     "children": []
@@ -136,12 +124,11 @@ def getFunction(funcinfo, refs=[]):
     "label": funcinfo['flongname'],
     "icon": "icon-member",
     "children": [{
-      "label": 'Definition at %s' % (funcinfo['floc']),
+      "label": 'Defined at %s' % (funcinfo['floc']),
       "icon": "icon-def",
       "url": locUrl(funcinfo['floc'])
     }]
   }
-  funcbase['children'].extend(getDeclarations(funcinfo['funcid']))
   refnode = {
     "label": "References",
     "children": []
@@ -162,18 +149,16 @@ def printError():
 <div class="info">Um, this isn't right...</div>"""
 
 def printMacro():
-  value = conn.execute('select * from macros where macroid=?;', (refid,)).fetchone()
-  macrotext = value['macrotext'] and value['macrotext'] or ''
-  macroargs = value['macroargs'] and value['macroargs'] or ''
+  value = conn.execute('select mname, mvalue from macros where mshortname=?;', (name,)).fetchone()
   print """Content-Type: text/html
 
 <div class="info">
-<div>%s%s</div>
+<div>%s</div>
 <pre style="margin-top:5px">
 %s
 </pre>
 </div>
-""" % (value['macroname'], macroargs, cgi.escape(macrotext))
+""" % (value[0], cgi.escape(value[1]))
 
 def printType():
   row = conn.execute("SELECT * FROM types WHERE tid=?", (refid,)).fetchone()
@@ -187,7 +172,7 @@ def printVariable():
   printTree(json.dumps(getVariable(row, refs)))
 
 def printFunction():
-  row = conn.execute("SELECT * FROM functions" +
+  row = conn.execute("SELECT fname, floc, flongname FROM functions" +
     " WHERE funcid=?", (refid,)).fetchone()
   refs = conn.execute("SELECT * FROM refs WHERE refid=?",(refid,))
   printTree(json.dumps(getFunction(row, refs)))
@@ -195,9 +180,8 @@ def printFunction():
 def printReference():
   val = conn.execute("SELECT 'var' FROM variables WHERE varid=?" +
     " UNION SELECT 'func' FROM functions WHERE funcid=?" +
-    " UNION SELECT 't' FROM types WHERE tid=?" +
-    " UNION SELECT 'm' FROM macros WHERE macroid=?",
-    (refid,refid,refid,refid)).fetchone()[0]
+    " UNION SELECT 't' FROM types WHERE tid=?",
+    (refid,refid,refid)).fetchone()[0]
   return dispatch[val]()
 
 def printTree(jsonString):
@@ -252,6 +236,7 @@ config = ConfigParser.ConfigParser()
 config.read('dxr.config')
 
 dxrdb = os.path.join(config.get('Web', 'wwwdir'), tree, '.dxr_xref', tree  + '.sqlite');
+htmlsrcdir = os.path.join('/', virtroot, tree) + '/'
 
 conn = sqlite3.connect(dxrdb)
 conn.execute('PRAGMA temp_store = MEMORY;')

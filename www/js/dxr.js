@@ -28,8 +28,8 @@ function closeInfo() {
 function showInfo(node) {
   var name = node.textContent;
   var line = node.parentNode.id.replace('l', '');
-  var file = location.pathname.replace(virtroot + '/' + tree + '/', '').replace('.html', '');
-  var url = virtroot + sep + "getinfo.cgi?virtroot=" + virtroot;
+  var file = location.pathname.replace(virtroot + tree + '/', '').replace('.html', '');
+  var url = virtroot + "getinfo.cgi?virtroot=" + virtroot;
   url += "&tree=" + tree + "&div=" + infoDivID++;
   url += "&type=" + node.className + "&name=" + name;
   var attrs = node.attributes;
@@ -50,9 +50,7 @@ function showInfo(node) {
               id: id,
               style: "margin:0; padding:0; white-space: normal !important;"
   });
-  var lineDiv = node.parentNode;
-  while (lineDiv.nodeName != 'DIV') lineDiv = lineDiv.parentNode;
-  infoDiv.placeAt(lineDiv, "after");
+  infoDiv.placeAt(node.parentNode, "after");
   infoDiv.attr('href', url); //"/dxr/getinfo2.cgi?tree-id=" + ); // /dxr/info-test.html?id=" + infoDivID);
   location.hash = line + '/' + name;
   dojo.addClass(node, 'highlighted');

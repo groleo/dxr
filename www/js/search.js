@@ -3,8 +3,7 @@ function doSearch(id) {
   var args = f.string.value.split(/ +/);
   var string = "";
   // Figure out the right path separator to use with virtroot
-  sep = virtroot[virtroot.length - 1] === '/' ? '' : '/';
-  var url = virtroot + sep + 'search.cgi?tree=' + tree;
+  var url = virtroot + 'cgi-bin/search.cgi?tree=' + tree;
 
   for (var i = 0; i < args.length; i++) {
     var arg = args[i];
@@ -25,7 +24,7 @@ function doSearch(id) {
       url += "&macro=" + encodeURIComponent(/^macro:(.+)/.exec(arg).slice(1,2));
     else if (/^warnings:.*/.exec(arg)) {
       var warnings = /^warnings:(.*)/.exec(arg).slice(1,2);
-      
+
       // see if user did warnings:<nothing>, meaning "show all warnings"
       if (warnings == '') 
           warnings = '*';

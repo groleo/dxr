@@ -7,8 +7,13 @@ import sys
 import os
 import ConfigParser
 import re
+import subprocess
 
 # Get the DXR installation point from dxr.config
+if not os.path.exists('dxr.config'):
+  print('Error reading %s: No such file or directory: dxr.config'  )
+  raise IOError('Error reading %s: No such file or directory: dxr.config')
+
 config = ConfigParser.ConfigParser()
 config.read('dxr.config')
 sys.path.append(config.get('DXR', 'dxrroot'))
@@ -18,41 +23,51 @@ def like_escape(val):
   return 'LIKE "%' + val.replace("\\", "\\\\").replace("_", "\\_") \
     .replace("%", "\\%") + '%" ESCAPE "\\"'
 
+def split_type(val):
+    parts = val.split('::')
+    # check for 'type' vs. 'type::member' vs. 'namespace::type::member' or 'namespace::namespace2::type::member'
+    n = None
+    t = None
+    m = None
+
+    if len(parts) == 1:
+        # just a single string, stuff it in type
+        t = val
+    elif len(parts) == 2:
+        t = parts[0]
+        m = parts[1]
+    else:
+        m = parts[-1]
+        t = parts[-2]
+        # use the rest as namespace
+        n = '::'.join(parts[0:-2])
+
+    return n, t, m
+
 def GetLine(loc):
-  # Load the parts
-  parts = loc.split(':')
-  fname, line = parts[0], int(parts[1])
-  if fname not in offset_cache:
-    return '<p>Error: Cannot find file %s</p>' % fname
+    parts = loc.split(':')
+    file = dxr.readFile(os.path.join(dxrconfig.wwwdir, tree, parts[0]))
+    line = int(parts[1])
+    if file:
+        result  = '<div class="searchfile"><a href="%s/%s">%s</a></div><ul class="searchresults">' % (tree, parts[0] + '.html#l' + parts[1], loc)
+        lines = file.split('\n')
+        for i in [-1, 0, 1]:
+            num = int(parts[1]) + i
+            result += '<li class="searchresult"><a href="%s/%s">%s:</a>&nbsp;&nbsp;%s</li>' % (tree, parts[0] + '.html#l' + str(num), num, cgi.escape(lines[line+i-1]))
 
-  # Open up the master file
-  master_text.seek(offset_cache[fname])
+        result += '</ul>'
+        return result
+    else:
+        return ''
 
-  output = ('<div class="searchfile"><a href="%s/%s.html#l%d">' +
-    '%s</a></div><ul class="searchresults">\n') % (tree, fname, line, loc)
-  # Show [line - 1, line, line + 1] unless we see more
-  read = [line - 1, line, line + 1]
-  while True:
-    readname, readline, readtext = master_text.readline().split(':', 2)
-    line_num = int(readline)
-    if readname != fname or line_num > read[-1]:
-      break
-    if line_num not in read:
-      continue
-    output += ('<li class="searchresult"><a href="%s/%s.html#l%s">%s:</a>' +
-      '&nbsp;&nbsp;%s</li>\n') % (tree, fname, readline, readline,
-      cgi.escape(readtext))
-  output += '</ul>'
-  return output
-
-def processString(string, path=None, ext=None):
+def processString(string):
   vrootfix = dxrconfig.virtroot
   if vrootfix == '/':
     vrootfix = ''
-  if ext is not None and ext[0] == '.':
-    ext = ext[1:]
   def printSidebarResults(name, results):
-    outputtedResults = False
+    if len(results) == 0:
+      return
+    print '<div class="bubble"><span class="title">%s</span><ul>' % name
     for res in results:
       # Make sure we're not matching part of the scope
       colon = res[0].rfind(':')
@@ -61,23 +76,20 @@ def processString(string, path=None, ext=None):
       fixloc = res[1].split(':')
       if path and not re.search(path, fixloc[0]):
         continue
-      if not outputtedResults:
-        outputtedResults = True
-        print '<div class="bubble"><span class="title">%s</span><ul>' % name
       print '<li><a href="%s/%s/%s.html#l%s">%s</a></li>' % \
         (vrootfix, tree, fixloc[0], fixloc[1], res[0])
-    if outputtedResults:
-      print '</ul></div>'
+    print '</ul></div>'
 
   # Print smart sidebar
   print '<div id="sidebar">'
-  config = [
-    ('types', ['tname', 'tloc', 'tname']),
-    ('macros', ['macroname', 'macroloc', 'macroname']),
-    ('functions', ['flongname', 'floc', 'fname']),
-    ('variables', ['vname', 'vloc', 'vname']),
-  ]
-  for table, cols in config:
+  config = {
+    'types': ['tname', 'tloc', 'tname'],
+    #'macros': ['mshortname', 'mloc', 'mshortname'], XXX: need to fix table
+    'variables': ['vname', 'vloc', 'vname'],
+    'functions': ['flongname', 'floc', 'fname'],
+  }
+  for table in config:
+    cols = config[table]
     results = []
     for row in conn.execute('SELECT %s FROM %s WHERE %s %s;' % (
         ', '.join(cols[:-1]), table, cols[0], like_escape(string))).fetchall():
@@ -86,7 +98,7 @@ def processString(string, path=None, ext=None):
 
   # Print file sidebar
   printHeader = True
-  filenames = dxr.readFile(os.path.join(treecfg.dbdir, 'file_list.txt'))
+  filenames = dxr.readFile(os.path.join(dxrconfig.wwwdir, tree, '.dxr_xref', 'file_list.txt'))
   if filenames:
     for filename in filenames.split('\n'):
       # Only check in leaf name
@@ -96,17 +108,29 @@ def processString(string, path=None, ext=None):
         if printHeader:
           print '<div class=bubble><span class="title">Files</span><ul>'
           printHeader = False
-        filename = vrootfix + '/' + tree + '/' + filename
+        filename = filename.replace(dxrconfig.wwwdir, vrootfix)
         print '<li><a href="%s.html">%s</a></li>' % (filename, m.group(1))
     if not printHeader:
       print "</ul></div>"
 
   print '</div><div id="content">'
 
+  # Check for strings like 'foo::bar'
+  halves = string.split('::')
+  if len(halves) == 2:
+    count = processMember(halves[1], halves[0], True)
+    if count > 0:
+      # we printed results, so don't bother with a text search
+      return
+
   # Text search results
   prevfile, first = None, True
-  master_text.seek(0)
-  for line in master_text:
+  file_index = os.path.join(dxrconfig.wwwdir, tree, '.dxr_xref', 'file_index.txt')
+  if not os.path.exists(file_index):
+    raise BaseException("No such file %s" % file_index)
+
+  index_file = open(file_index)
+  for line in index_file:
     # The index file is <path>:<line>:<text>
     colon = line.find(':')
     colon2 = line.find(':', colon)
@@ -130,14 +154,14 @@ def processString(string, path=None, ext=None):
   else:
     print '</ul>'
 
-def processType(type, path=None):
+def processType(type):
   for type in conn.execute('select tname, tloc, tkind from types where tname like "' + type + '%";').fetchall():
     tname = cgi.escape(type[0])
-    if not path or re.search(path, type[1]):
+    if not path or re.search(path, tloc):
       print '<h3>%s (%s)</h3>' % (tname, type[2])
       print GetLine(type[1])
 
-def processDerived(derived, path=None):
+def processDerived(derived):
   components = derived.split('::')
   if len(components) > 1:
     # Find out if the entire thing is a class or not
@@ -181,92 +205,152 @@ def processDerived(derived, path=None):
         print GetLine(method[2])
 
 def processMacro(macro):
-  for m in conn.execute('SELECT * FROM macros WHERE macroname LIKE "' +
-      macro + '%";').fetchall():
-    mname = m['macroname']
-    if m['macroargs']:
-      mname += m['macroargs']
-    mtext = m['macrotext'] and m['macrotext'] or ''
-    print '<h3>%s</h3><pre>%s</pre>' % (cgi.escape(mname), cgi.escape(mtext))
-    print GetLine(m['macroloc'])
+    for m in conn.execute('select mname, mvalue from macros where mshortname like "' + macro + '%";').fetchall():
+        mname = cgi.escape(m[0])
+        mvalue = cgi.escape(m[1])
+        print '<h3>%s</h3><pre>%s</pre>' % (mname, mvalue)
 
-def processFunction(func):
-  for f in conn.execute('SELECT * FROM functions WHERE flongname LIKE "%' +
-      func + '%";').fetchall():
-    print '<h3>%s</h3>' % cgi.escape(f['flongname'])
-    print GetLine(f['floc'])
+def processMember(member, type, printDecl):
+    members = None
+    count = 0 # make sure we find something
+    if type:
+        members = conn.execute('select mname, mtname, mtloc, mdecl, mdef, mvalue, maccess from members where mshortname like "' + member +
+                               '%" and mtname like "' + type + '%" order by mtname, maccess, mname;').fetchall()
+    else:
+        members = conn.execute('select mname, mtname, mtloc, mdecl, mdef, mvalue, maccess from members where mshortname like "' + member +
+                               '%" order by mtname, maccess, mname;').fetchall()
+    # TODO: is there a way to add more of the above data here?
+    for m in members:
+        if m[5]: # does this member have a value?
+            print '<h3>%s::%s [Value = %s]</h3>' % (cgi.escape(m[1]), cgi.escape(m[0]), cgi.escape(m[5]))
+        else:
+            print '<h3>%s::%s</h3>' % (cgi.escape(m[1]), cgi.escape(m[0]))
 
-def processVariable(var):
-  for v in conn.execute('SELECT * FROM variables WHERE vname LIKE "%' +
-      var + '%";').fetchall():
-    qual = v['modifiers'] and v['modifiers'] or ''
-    print '<h3>%s %s %s</h3>' % (cgi.escape(qual), cgi.escape(v['vtype']),
-      cgi.escape(v['vname']))
-    print GetLine(v['vloc'])
+        if printDecl and m[3]:
+            print GetLine(m[3])
+            count += 1
+        if m[4]:
+            print GetLine(m[4])
+            count += 1
+    return count
+
+def processCallers(callers):
+    n, t, m = split_type(callers)
+
+    if not t and not m:
+        return
+
+    if n:
+        # type names will include namespace
+        t = n + '::' + t
+
+    hits = conn.execute("select namespace, type, shortName from node where id in (select caller from edge where callee in (select id from node where type=? COLLATE NOCASE and shortName=? COLLATE NOCASE));", (t, m)).fetchall();
+    count = 0
+    for h in hits:
+        count += 1
+        if h[0]:
+            processMember(h[2], h[0] + '::' + h[1], False)
+        else:
+            processMember(h[2], h[1], False)
+
+#    # No hits on direct type, try bases
+#    if count == 0:
+#        hits = conn.execute("select type, shortName from node where id in (select caller from edge where callee in (select id from node where shortName=? and type in (select tbname from impl where tcname=?)));", (parts[1], parts[0])).fetchall();
+#        for h in hits:
+#            count += 1
+#            processMember(h[1], h[0], False)
+
+    if count == 0:
+        print "No matches found.  Perhaps you want a base type?"
+
+        # Show base types with this member
+        for type in conn.execute('select tbname, tcloc, direct from impl where tcname = ? order by direct desc COLLATE NOCASE;', (t,)).fetchall():
+            tname = cgi.escape(type[0])
+            tdirect = 'Direct' if type[2] == 1 else 'Indirect'
+            if not path or re.search(path, tloc):
+                print '<h3>%s (%s)</h3>' % (tname, tdirect)
+                print GetLine(type[1])
 
 def processWarnings(warnings):
   # Check for * which means user entered "warnings:" and wants to see all of them.
   if warnings == '*':
     warnings = ''
 
-  num_warnings = 0
   for w in conn.execute("SELECT wloc, wmsg FROM warnings WHERE wmsg LIKE '%" +
       warnings + "%' ORDER BY wloc COLLATE loc;").fetchall():
     if not path or re.search(path, w[0]):
       print '<h3>%s</h3>' % w[1]
       print GetLine(w[0])
-      num_warnings += 1
-  if num_warnings == 0:
-    print '<h3>No warnings found.</h3>'
 
 # XXX: enable auto-flush on write - http://mail.python.org/pipermail/python-list/2008-June/668523.html
 # reopen stdout file descriptor with write mode
 # and 0 as the buffer size (unbuffered)
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
 
-# Load query parameters
-fieldStorage = cgi.FieldStorage()
-form = dict((key, fieldStorage.getvalue(key)) for key in fieldStorage.keys())
+form = cgi.FieldStorage()
 
-# Which tree are we searching
-if 'tree' in form:
-  tree = form['tree']
-else:
-  # XXX: all trees? default trees? What to do?
-  tree = ''
+string = None
+path = None
+ext = None
+type = ''
+derived = ''
+member = ''
+tree = '' #mozilla-central' # just a default for now
+macro = ''
+callers = ''
+warnings = ''
 
-# XXX: We're assuming dxr.config is in the same place as the web directory.
-# May want to assume standard system location or something for easier large
-# deployments
+if form.has_key('string'):
+    string = form['string'].value
 
-# Load the configuration files
+if form.has_key('path'):
+    path = form['path'].value
+
+if form.has_key('ext'):
+    ext = form['ext'].value
+    # remove . if present
+    ext = ext.replace('.', '')
+
+if form.has_key('type'):
+    type = form['type'].value
+
+if form.has_key('derived'):
+    derived = form['derived'].value
+
+if form.has_key('member'):
+    member = form['member'].value
+
+if form.has_key('tree'):
+    tree = form['tree'].value
+if tree == '':
+  raise BaseException("tree variable is void")
+
+if form.has_key('macro'):
+    macro = form['macro'].value
+
+if form.has_key('callers'):
+    callers = form['callers'].value
+
+if form.has_key('warnings'):
+    warnings = form['warnings'].value
+
+htmldir = os.path.join('./', tree)
+
+# TODO: kill off hard coded path
 dxrconfig = dxr.load_config('./dxr.config')
 for treecfg in dxrconfig.trees:
   if treecfg.tree == tree:
     dxrconfig = treecfg
     break
-else:
-  # XXX: no tree, we're defaulting to the last one
-  dxrconfig = treecfg
 
-# Load the database
+#wwwdir = config.get('Web', 'wwwdir')
+
 dbname = tree + '.sqlite'
-dxrdb = os.path.join(treecfg.dbdir, dbname)
+dxrdb = os.path.join(dxrconfig.wwwdir, tree, '.dxr_xref', dbname)
+if not os.path.exists(dxrdb):
+  raise BaseException("No such file %s" % dxrdb )
+
 conn = sqlite3.connect(dxrdb)
-conn.execute('PRAGMA temp_store = MEMORY;')
-
-# Master text index, load it
-master_text = open(os.path.join(treecfg.dbdir, 'file_index.txt'), 'r')
-f = open(os.path.join(treecfg.dbdir, 'index_index.txt'), 'r')
-offset_cache = {}
-try:
-  for line in f:
-    l = line.split(':')
-    offset_cache[l[0]] = int(l[-1])
-finally:
-  f.close()
-
-# This makes results a lot more fun!
 def collate_loc(str1, str2):
   parts1 = str1.split(':')
   parts2 = str2.split(':')
@@ -276,35 +360,34 @@ def collate_loc(str1, str2):
     parts2[i] = int(parts2[i])
   return cmp(parts1, parts2)
 conn.create_collation("loc", collate_loc)
-conn.row_factory = sqlite3.Row
 
-# Output the text results.
+conn.execute('PRAGMA temp_store = MEMORY;')
 
-print 'Content-Type: text/html\n'
-
-# XXX... plugins!
-searches = [
-  ('type', processType, False, 'Types %s', ['path']),
-  ('function', processFunction, False, 'Functions %s', []),
-  ('variable', processVariable, False, 'Functions %s', []),
-  ('derived', processDerived, False, 'Derived from %s', ['path']),
-  ('macro', processMacro, False, 'Macros %s', []),
-  ('warnings', processWarnings, False, 'Warnings %s', ['path']),
-  ('string', processString, True, '%s', ['path', 'ext'])
-]
-for param, dispatch, hasSidebar, titlestr, optargs in searches:
-  if param in form:
-    titlestr = cgi.escape(titlestr % form[param])
-    print dxrconfig.getTemplateFile("dxr-search-header.html") % titlestr
-    if not hasSidebar:
-      print '<div id="content">'
-    kwargs = dict((k,form[k]) for k in optargs if k in form)
-    dispatch(form[param], **kwargs)
-    break
+if string:
+  titlestr = string
 else:
-  print dxrconfig.getTemplateFile("dxr-search-header.html") % 'Error'
-  print '<h3>Error: unknown search parameters</h3>'
+  titlestr = ''
+print 'Content-Type: text/html\n'
+print dxrconfig.getTemplateFile("dxr-search-header.html") % cgi.escape(titlestr)
 
-master_text.close()
+if string:
+    processString(string)
+else:
+    print '<div id="content">'
+    if type:
+        if member:
+            processMember(member, type, True)
+        else:
+            processType(type)
+    elif derived:
+        processDerived(derived)
+    elif member:
+        processMember(member, type, True)
+    elif macro:
+        processMacro(macro)
+    elif callers:
+        processCallers(callers)
+    elif warnings:
+      processWarnings(warnings)
 print dxrconfig.getTemplateFile("dxr-search-footer.html")
 
