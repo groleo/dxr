@@ -41,7 +41,11 @@ def process_ref(info):
 def process_warning(warning):
   warnings.append(warning)
 
+def process_node():
+  print ("process_node")
 
+def process_edge():
+  print ("process_edge")
 # 
 def load_indexer_output(fname):
   print "Opening file:%s" %fname
