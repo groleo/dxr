@@ -9,6 +9,8 @@ functions = {}
 inheritance = {}
 variables = {}
 references = {}
+nodes = {}
+edges = {}
 warnings = []
 
 # handlers for first columnt field
@@ -41,11 +43,12 @@ def process_ref(info):
 def process_warning(warning):
   warnings.append(warning)
 
-def process_node():
+def process_node(node):
   print ("process_node")
 
-def process_edge():
+def process_edge(edge):
   print ("process_edge")
+  edges[edge['callerName']] = edge
 # 
 def load_indexer_output(fname):
   print "Opening file:%s" %fname
@@ -322,6 +325,31 @@ schema = dxr.plugins.Schema({
     ("refloc", "_location", False),   # Location of the reference
     ("extent", "VARCHAR(30)", False), # Extent (start:end) of the reference
     ("_key", "refid", "refloc")
+  ],
+  "nodes": [
+    ("nodeid", "INTEGER", False),
+    ("name", "VARCHAR(256)", True),     # Full type (including pointer stuff)
+    ("returnType", "VARCHAR(256)", True),     # Full type (including pointer stuff)
+    ("namespace", "VARCHAR(256)", True),     # Full type (including pointer stuff)
+    ("type", "VARCHAR(256)", True),     # Full type (including pointer stuff)
+    ("shortName", "VARCHAR(256)", True),     # Full type (including pointer stuff)
+    ("isPtr", "INTEGER", False),     # Full type (including pointer stuff)
+    ("isVirtual", "INTEGER", False),     # Full type (including pointer stuff)
+    ("loc", "_location", True),     # Full type (including pointer stuff)
+    ("_key", "nodeid")
+  ],
+  "edges": [
+    ("caller","INTEGER",False),
+    ("callee","INTEGER",False),
+    ("_key","caller","callee")
+  ],
+  "implementors": [
+    ("implid", "INTEGER", False),
+    ("impl", "VARCHAR(256)", True),
+    ("interface", "VARCHAR(256)", True),
+    ("method", "VARCHAR(256)", True),
+    ("loc", "_location", False),
+    ("_key", "implid")
   ],
   # Warnings found while compiling
   "warnings": {

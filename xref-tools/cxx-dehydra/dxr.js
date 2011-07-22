@@ -21,7 +21,8 @@
 var srcroot = "/src/dxr/";
 var srcRegex = new RegExp("^" + srcroot);
 
-var sql = [];
+let DEBUG = false ;
+//var sql = [];
 var csv = [];
 
 
@@ -79,7 +80,7 @@ function print_members(t, members) {
                 insert_csv_stmt("members", ['mtname', 'mtloc', 'mname', 'mshortname', 'mdecl', 'mvalue', 'maccess', 'mstatic'], [m.mtname, tloc, m.mname, mshortname, loc, mvalue, members[i].access, mstatic]);
             } else {
                 // This is an implementation, not a decl loc, update def (we'll get decl elsewhere)
-                print("UPDATE\n");
+                debug_print("UPDATE\n");
                 var update = "update or abort members set mdef=" + quote(loc);
                 update += " where mtname=" + quote(m.mtname) + " and mtloc=" + quote(tloc) + " and mname=" + quote(m.mname) + ";";
                 //sql.push(update);
@@ -194,7 +195,6 @@ include('map.js');
 include('unstable/lazy_types.js');
 include('unstable/dehydra_types.js');
 
-let DEBUG = true ;
 
 let edges = [];
 let virtuals = [];
