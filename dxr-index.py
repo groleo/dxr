@@ -116,10 +116,16 @@ def builddb(treecfg, dbdir):
   conn.executescript('\n'.join(schemata))
   conn.commit()
   for stmt in all_statements:
-    if isinstance(stmt, tuple):
-      conn.execute(stmt[0], stmt[1])
-    else:
-      conn.execute(stmt)
+    try:
+      print ">>%s##%s" %(stmt[0],stmt[1])
+      if isinstance(stmt, tuple):
+        conn.execute(stmt[0], stmt[1])
+      else:
+        conn.execute(stmt)
+    except sqlite3.InterfaceError:
+      print "%s##%s" %(stmt[0],stmt[1])
+      print "\n"
+      raise
   conn.commit()
   conn.close()
 

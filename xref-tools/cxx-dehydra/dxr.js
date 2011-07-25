@@ -25,24 +25,72 @@ let DEBUG = false ;
 //var sql = [];
 var csv = [];
 
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+function fix_path(loc) {
+    // loc is {file: 'some/path', line: #, column: #}.  Normalize paths as follows:
+    // from: /home/dave/gcc-dehydra/installed/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.3.0/../../../../include/c++/4.3.0/exception:59
+    // to:   /home/dave/gcc-dehydra/installed/include/c++/4.3.0/exception:59
+    if (!loc) return;
+
+    //ignore first slash
+    var parts = loc.file.split("/").reverse();
+    var fixed;
+    var skip = 0;
+
+    for (var i = 0; i < parts.length; i++) {
+        if (parts[i] == "..") {
+            skip++;
+            continue;
+        }
+
+        if (skip == 0) {
+            if (i == 0) fixed = parts[i];
+            else fixed = parts[i] + "/" + fixed;
+        } else {
+            skip--;
+        }
+    }
+    loc.file = fixed;
+}
+function location_string(decl) {
+    let loc = location_of(decl);
+    if (loc == UNKNOWN_LOCATION) throw new Error("unknown location");
+
+    if (LOC_IS_BUILTIN(loc)) return "<built-in>";
+
+    let path = loc.file;
+
+    try {
+        return resolve_path(path)+':'+loc.line.toString()+':'+loc.column.toString() ;
+    } catch (e) {
+        if (e.message.indexOf("No such file or directory")) {
+            // this can occur if people use the #line directive to artificially override
+            // the source file name in gcc. in such cases, there's nothing we can really
+            // do, and it's their fault if the filename clashes with something.
+            return path+':'+loc.line.toString()+':'+loc.column.toString() ;
+        }
+
+        // something else happened - rethrow
+        throw new Error(e);
+    }
+}
 
 //////////////////////////////////////////////////////////////////////////////
+// Keep track of whether this is a direct child of the base vs. many levels deep
 //////////////////////////////////////////////////////////////////////////////
 function print_all_bases(t, bases, direct) {
-    // Keep track of whether this is a direct child of the base vs. many levels deep
     var directBase = direct ? 1 : -1;
 
     for (var i = 0; i < bases.length; i++) {
         var tbloc = 'no_loc';
         if (bases[i].type.loc) { // XXX: why would this not exist?
-            fix_path(bases[i].type.loc);
-            tbloc = bases[i].type.loc.file + ":" + bases[i].type.loc.line.toString();
+            tbloc = location_string2(bases[i].type);
         }
 
         var tcloc = 'no_loc';
         if (t.loc) { // XXX: why would this not exist?
-            fix_path(t.loc);
-            tcloc = t.loc.file + ":" + t.loc.line.toString();
+            tcloc = location_string2(t);
         }
 
         //insert_sql_stmt("impl", ['tbname','tbloc','tcname','tcloc','direct'],
@@ -115,34 +163,6 @@ function parse_name(c) {
 }
 
 
-//////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////
-function fix_path(loc) {
-    // loc is {file: 'some/path', line: #, column: #}.  Normalize paths as follows:
-    // from: /home/dave/gcc-dehydra/installed/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.3.0/../../../../include/c++/4.3.0/exception:59
-    // to:   /home/dave/gcc-dehydra/installed/include/c++/4.3.0/exception:59
-    if (!loc) return;
-
-    //ignore first slash
-    var parts = loc.file.split("/").reverse();
-    var fixed;
-    var skip = 0;
-
-    for (var i = 0; i < parts.length; i++) {
-        if (parts[i] == "..") {
-            skip++;
-            continue;
-        }
-
-        if (skip == 0) {
-            if (i == 0) fixed = parts[i];
-            else fixed = parts[i] + "/" + fixed;
-        } else {
-            skip--;
-        }
-    }
-    loc.file = fixed;
-}
 
 
 //////////////////////////////////////////////////////////////////////////////
@@ -231,7 +251,7 @@ function ensure_string(str) {
 function push_node(node) {
     debug_print("push_node");
     insert_csv_stmt( 'node', ['name', 'returnType', 'namespace', 'type', 'shortName', 'isPtr', 'isVirtual', 'loc'],
-    [ serialize_full_method(node)  ,
+    [ node.name, //serialize_full_method(node)  ,
     ensure_string(node.rt),
     ensure_string(node.ns),
     ensure_string(node.class),
@@ -241,14 +261,17 @@ function push_node(node) {
     node.loc]);
 }
 
+
 function push_edge(edge) {
     debug_print("push_edge");
     //insert_sql_stmt( 'edge', ['caller', 'callee'],
     //['SELECT id FROM node WHERE name = "' + serialize_full_method(edge.caller) + '" AND loc = "' + edge.caller.loc,
     // 'SELECT id FROM node WHERE name = "' + serialize_full_method(edge.callee) + '" AND loc = "' + edge.callee.loc ]);
-    insert_csv_stmt( 'edge', ['callerName', 'callerLoc', 'calleeName','caleeLoc'],
-    [serialize_full_method(edge.caller), edge.caller.loc,
-     serialize_full_method(edge.callee), edge.callee.loc ]);
+    insert_csv_stmt( 'edge', ['callerName', 'callerLoc', 'calleeName','calleeLoc'],
+    [edge.caller.method,//serialize_full_method(edge.caller),
+     edge.caller.loc,
+     edge.callee.method,//serialize_full_method(edge.callee),
+     edge.callee.loc ]);
 }
 
 
@@ -332,7 +355,7 @@ function get_names(decl) {
         } else {
             // resolve the file loc to a unique absolute path, with no symlinks.
             // have no context, so use what we've got
-            names.loc = location_string(decl);
+            names.loc = location_string(decl) ;
         }
 
         // XXX for has_this: DECL_NONSTATIC_MEMBER_FUNCTION_P
@@ -383,28 +406,6 @@ function get_names(decl) {
     return names;
 }
 
-function location_string(decl) {
-    let loc = location_of(decl);
-    if (loc == UNKNOWN_LOCATION) throw new Error("unknown location");
-
-    if (LOC_IS_BUILTIN(loc)) return "<built-in>";
-
-    let path = loc.file;
-
-    try {
-        return resolve_path(path);
-    } catch (e) {
-        if (e.message.indexOf("No such file or directory")) {
-            // this can occur if people use the #line directive to artificially override
-            // the source file name in gcc. in such cases, there's nothing we can really
-            // do, and it's their fault if the filename clashes with something.
-            return path;
-        }
-
-        // something else happened - rethrow
-        throw new Error(e);
-    }
-}
 
 function process_subclasses(c, implementor) {
     debug_print("process_subclasses");
@@ -463,7 +464,9 @@ function resolve_function_decl(expr) {
         throw new Error("resolve_function_decl: unresolvable decl with TREE_CODE " + TREE_CODE(r));
     }
 }
-
+function location_string2(d){
+    return resolve_path(d.loc.file)+':'+d.loc.line.toString()+':'+d.loc.column.toString() ;
+}
 //////////////////////////////////////////////////////////////////////////////
 // Hydra specific
 //////////////////////////////////////////////////////////////////////////////
@@ -474,13 +477,19 @@ function process_decl(d) {
     if (!d.isFunction) return;
 
     // Skip things we don't care about
-    if ((/:?:?operator.*$/.exec(d.name)) || /* overloaded operators */ (/^D_[0-9]+$/.exec(d.name)) || /* gcc temporaries */ (/^_ZTV.*$/.exec(d.name)) || /* vtable vars */ (/.*COMTypeInfo.*/.exec(d.name)) || /* ignore COMTypeInfo<int> */ ('this' == d.name) || (/^__built_in.*$/.exec(d.name))) /* gcc built-ins */
+    if ((/:?:?operator.*$/.exec(d.name)) /* overloaded operators */ 
+    ||(/^D_[0-9]+$/.exec(d.name))/* gcc temporaries */ 
+    || (/^_ZTV.*$/.exec(d.name))/* vtable vars */ 
+    || (/.*COMTypeInfo.*/.exec(d.name))/* ignore COMTypeInfo<int> */ 
+    || ('this' == d.name)
+    || (/^__built_in.*$/.exec(d.name))) /* gcc built-ins */
     return;
 
     // Treat the decl of a func like one of the statements in the func so we can link params
     var vfuncname = d.name;
-    fix_path(d.loc);
-    var vfuncloc = d.loc.file + ":" + d.loc.line.toString() + ":" + d.loc.column.toString();
+    //fix_path(d.loc);
+    //var vfuncloc = location_string(d); //d.loc.file + ":" + d.loc.line.toString() + ":" + d.loc.column.toString();
+    var vfuncloc = resolve_path(d.loc.file)+':'+d.loc.line.toString()+':'+d.loc.column.toString() ;
 
     // Treat the actual func decl as a statement so we can easily linkify it
     var vtype = '';
@@ -499,14 +508,16 @@ function process_decl(d) {
     var vtloc = '';
 
     if (d.memberOf && d.memberOf.loc) {
-        fix_path(d.memberOf.loc);
-        vtloc = d.memberOf.loc.file + ":" + d.memberOf.loc.line.toString();
+        //fix_path(d.memberOf.loc);
+        vtloc = resolve_path(d.memberOf.loc.file) + ":" + d.memberOf.loc.line.toString();
     }
 
     //
     //insert_sql_stmt("stmts", ['vfuncname','vfuncloc','vname','vshortname','vlocf','vlocl','vlocc','vtype','vtloc','visFcall','visDecl'],
     //                      [vfuncname, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc,-1,1]);
-    insert_csv_stmt("function", ['flongname', 'floc', 'fname', 'fshortname', 'vlocf', 'vlocl', 'vlocc', 'vtype', 'vtloc', 'visFcall', 'visDecl'], [vfuncname, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc, -1, 1]);
+    insert_csv_stmt("function",
+    ['flongname', 'floc', 'fname', 'fshortname', 'vlocf', 'vlocl', 'vlocc', 'vtype', 'vtloc', 'visFcall', 'visDecl'],
+    [vfuncname, vfuncloc, vname, vshortname, vlocf, vlocl, vlocc, vtype, vtloc, -1, 1]);
 
     if (!d.parameters) return;
 
@@ -545,8 +556,10 @@ function process_type(c) {
     if (!srcRegex.test(c.loc.file) && /^[^\/]+\.cpp$/.exec(c.loc.file) && /dist\/include/.exec(c.loc.file)) return;
     //TODO - what to do about other types?
     if (c.typedef) process_typedef(c);
-    else if (/class|struct/.exec(c.kind)) process_RegularType(c);
-    else if (c.kind == 'enum') process_EnumType(c);
+    else if (/class|struct/.exec(c.kind))
+        process_RegularType(c);
+    else if (c.kind == 'enum')
+        process_EnumType(c);
     // TODO: what about other types?
 
     function process_typedef(c) {
@@ -568,7 +581,23 @@ function process_type(c) {
 
         //  insert_sql_stmt("types", ['tname','tloc','ttypedefname','ttypedefloc','tkind','ttemplate','tignore','tmodule'],
         //                        [c.name, tloc, ttypedefname, ttypedefloc, 'typedef', ttemplate, tignore, 'fixme']);
-        insert_csv_stmt("type", ['tqualname', 'tloc', 'tname', 'ttypedefloc', 'tkind', 'ttemplate', 'tignore', 'tmodule'], [c.name, tloc, ttypedefname, ttypedefloc, 'typedef', ttemplate, tignore, 'fixme']);
+        insert_csv_stmt("type",
+        ['tqualname',
+	'tloc',
+	'tname',
+	'ttypedefloc',
+	'tkind',
+	'ttemplate',
+	'tignore',
+	'tmodule'],
+	[c.shortName,
+	tloc,
+	ttypedefname,
+	ttypedefloc,
+	'typedef',
+	ttemplate,
+	tignore,
+	'fixme']);
     }
 
     function process_EnumType(c) {
@@ -626,8 +655,8 @@ function process_type(c) {
         // into the objdir, and linked locally (e.g., xpcom/glue), and in such cases
         // loc will be a filename with no path.  These are useful to have after post-processing.
         // Normalize path and throw away column info -- we just care about file + line for types.
-        fix_path(c.loc);
-        var tloc = c.loc.file + ":" + c.loc.line.toString();
+        //fix_path(c.loc);
+        var tloc = resolve_path(c.loc.file) + ":" + c.loc.line.toString();
 
         // 'fixme' will be corrected in post-processing.  Can't do it here, because I need to follow
         // symlinks to get full paths for some files.

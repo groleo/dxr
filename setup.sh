@@ -11,7 +11,7 @@ mkdir $CGI_BIN
 
 . setup-env.sh $SRCDIR
 cd $SRCDIR
-$CC 1167.c
+$CXX 1167.cpp
 cd -
 ./dxr-index.py
 
