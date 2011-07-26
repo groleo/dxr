@@ -446,6 +446,7 @@ class CxxHtmlifier:
         if self.blob_file is None:
             return
         def make_link(obj, loc, name, clazz, **kwargs):
+            print "LOC:%s" % obj[loc]
             line, col = obj[loc].split(':')[1:]
             line, col = int(line), int(col)
             kwargs['class'] = clazz
