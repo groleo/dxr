@@ -234,6 +234,10 @@ def processMember(member, type, printDecl):
             count += 1
     return count
 
+def processCallers(callees):
+    n, t, m = split_type(callees)
+    hist = conn.execute("select flongname from functions where funcid in (select callee from calls where caller in (select funcid from functions where flongname='?' COLLATE NOCASE));", (m).fetchall() ;
+
 def processCallers(callers):
     n, t, m = split_type(callers)
 
@@ -244,7 +248,8 @@ def processCallers(callers):
         # type names will include namespace
         t = n + '::' + t
 
-    hits = conn.execute("select namespace, type, shortName from node where id in (select caller from edge where callee in (select id from node where type=? COLLATE NOCASE and shortName=? COLLATE NOCASE));", (t, m)).fetchall();
+    #hits = conn.execute("select namespace, type, shortName from node where id in (select caller from edge where callee in (select id from node where type=? COLLATE NOCASE and shortName=? COLLATE NOCASE));", (t, m)).fetchall();
+    hits = conn.execute("select flongname from functions where funcid in (select caller from calls where callee in (select funcid from functions where fname=? COLLATE NOCASE));", (m).fetchall() ;
     count = 0
     for h in hits:
         count += 1
@@ -298,6 +303,7 @@ member = ''
 tree = '' #mozilla-central' # just a default for now
 macro = ''
 callers = ''
+callees = ''
 warnings = ''
 
 if form.has_key('string'):
@@ -330,6 +336,9 @@ if form.has_key('macro'):
 
 if form.has_key('callers'):
     callers = form['callers'].value
+
+if form.has_key('callees'):
+    callees = form['callees'].value
 
 if form.has_key('warnings'):
     warnings = form['warnings'].value
@@ -387,6 +396,8 @@ else:
         processMacro(macro)
     elif callers:
         processCallers(callers)
+    elif callees:
+        processCallees(callees)
     elif warnings:
       processWarnings(warnings)
 print dxrconfig.getTemplateFile("dxr-search-footer.html")
