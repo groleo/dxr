@@ -546,7 +546,7 @@ function process_decl(d)
 
     csv.insert("function",
         {
-        'fname':vname,
+        'fname':vshortname,
         'flongname':vfuncname,
         'floc':vfuncloc,
         /*
@@ -576,11 +576,12 @@ function process_decl(d)
             vtype = d.parameters[i].type.name;
             vtloc = d.parameters[i].type.loc ? locationToString(d.parameters[i].type) : '';
         }
-
+/*
         csv.insert("function",
-                {'flongname': vfuncname,
+                {
+                'fname': vshortname,
+                'flongname': vfuncname,
                 'floc': vfuncloc,
-                'fname': vname,
                 'vshortname': vshortname,
                 'vlocf': vlocf,
                 'vlocl': vlocl,
@@ -590,6 +591,7 @@ function process_decl(d)
                 'visFcall': -1,
                 'visDecl': 1
                 });
+	*/
     }
 }
 
@@ -746,7 +748,8 @@ function process_function(decl, body)
     {
         // file-scope static
         csv.insert("function",
-                {'fname': decl.name,
+                {
+                'fname': decl.name,
                 'flongname': 'XX:LONGNAME',
                 'floc': floc
                 });

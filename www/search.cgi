@@ -234,9 +234,9 @@ def processMember(member, type, printDecl):
             count += 1
     return count
 
-def processCallers(callees):
+def processCallees(callees):
     n, t, m = split_type(callees)
-    hist = conn.execute("select flongname from functions where funcid in (select callee from calls where caller in (select funcid from functions where flongname='?' COLLATE NOCASE));", (m).fetchall() ;
+    hist = conn.execute("select flongname from functions where funcid in (select callee from calls where caller in (select funcid from functions where fname=(?) COLLATE NOCASE));", [t]).fetchall() ;
 
 def processCallers(callers):
     n, t, m = split_type(callers)
@@ -249,10 +249,12 @@ def processCallers(callers):
         t = n + '::' + t
 
     #hits = conn.execute("select namespace, type, shortName from node where id in (select caller from edge where callee in (select id from node where type=? COLLATE NOCASE and shortName=? COLLATE NOCASE));", (t, m)).fetchall();
-    hits = conn.execute("select flongname from functions where funcid in (select caller from calls where callee in (select funcid from functions where fname=? COLLATE NOCASE));", (m).fetchall() ;
+    hits = conn.execute("SELECT flongname FROM functions WHERE funcid IN (SELECT caller FROM calls WHERE callee IN (SELECT funcid FROM functions WHERE fname=(?) COLLATE NOCASE));",[t]) .fetchall() ;
+    print hits
     count = 0
     for h in hits:
         count += 1
+        print h
         if h[0]:
             processMember(h[2], h[0] + '::' + h[1], False)
         else:
@@ -269,7 +271,7 @@ def processCallers(callers):
         print "No matches found.  Perhaps you want a base type?"
 
         # Show base types with this member
-        for type in conn.execute('select tbname, tcloc, direct from impl where tcname = ? order by direct desc COLLATE NOCASE;', (t,)).fetchall():
+        for type in conn.execute('SELECT tbname, tcloc, direct FROM impl WHERE tcname = ? ORDER BY direct DESC COLLATE NOCASE;', (t,)).fetchall():
             tname = cgi.escape(type[0])
             tdirect = 'Direct' if type[2] == 1 else 'Indirect'
             if not path or re.search(path, tloc):

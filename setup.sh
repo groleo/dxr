@@ -4,16 +4,16 @@
 SRCDIR=/home/mariusn/workspace/mine/
 WWWDIR=/home/mariusn/public_html/
 
-rm -rf $WWWDIR/*
+#rm -rf $WWWDIR/*
 
 CGI_BIN=$WWWDIR/cgi-bin/
-mkdir $CGI_BIN
+[ ! -d $CGI_BIN ] && mkdir $CGI_BIN
 
 . setup-env.sh $SRCDIR
 cd $SRCDIR
-$CXX 1167.cpp
+$CXX 1167.C
 cd -
-./dxr-index.py
+./dxr-index.py 2>&1
 
 cp -r www/js $WWWDIR
 cp -r www/images/ $WWWDIR
