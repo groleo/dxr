@@ -117,7 +117,6 @@ def builddb(treecfg, dbdir):
   conn.commit()
   for stmt in all_statements:
     try:
-      print ">>%s##%s" %(stmt[0],stmt[1])
       if isinstance(stmt, tuple):
         conn.execute(stmt[0], stmt[1])
       else:
