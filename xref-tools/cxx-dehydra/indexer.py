@@ -1,17 +1,23 @@
 import csv
 import dxr.plugins
 import os
+import sys
 
 decl_master = {}
 types = {}
 typedefs = {}
 functions = {}
 inheritance = {}
-nodes = {}
 edges = {}
 variables = {}
 references = {}
 warnings = []
+
+debugLvl=1
+
+def debugPrint(lvl,args):
+    if lvl == debugLvl:
+        print "IDX:", args
 
 # handlers for first columnt field
 def process_decldef(args):
@@ -28,7 +34,7 @@ def process_typedef(typeinfo):
 
 def process_function(funcinfo):
     functions[(funcinfo['flongname'], funcinfo['floc'])] = funcinfo
-    print "process_function [%s]-[%s]" % (funcinfo['flongname'], funcinfo['floc'])
+    debugPrint (2,"process_function [%s]-[%s]" % (funcinfo['flongname'], funcinfo['floc']) )
 
 def process_impl(info):
     inheritance[info['tbname'], info['tbloc'], info['tcname'], info['tcloc']]=info
@@ -44,17 +50,13 @@ def process_ref(info):
 def process_warning(warning):
     warnings.append(warning)
 
-def process_node(node):
-    print "process_node [%s]-[%s]" % (node['shortName'],node['loc'])
-    nodes[node['name'],node['returnType'], node['namespace'],node['type'],node['shortName'],node['isPtr'],node['isVirtual'],node['loc']] = node
-
-def process_edge(edge):
-    print "process_edge [%s]-[%s]" % (edge['calleeName'],edge['calleeLoc'])
+def process_call(edge):
+    debugPrint(1,"process_edge [%s][%s] => [%s][%s]" % (edge['callerName'],edge['callerLoc'], edge['calleeName'],edge['calleeLoc']))
     edges[edge['callerName'],edge['callerLoc'],edge['calleeName'],edge['calleeLoc']] = edge
 
 ##############################################
 def load_indexer_output(fname):
-    print "Opening file:%s" %fname
+    debugPrint(2,"Opening file:%s" %fname)
     f = open(fname, "rb")
     try:
         parsed_iter = csv.reader(f)
@@ -66,7 +68,7 @@ def load_indexer_output(fname):
                 argobj[line[i]] = line[i + 1]
             globals()['process_' + line[0]](argobj)
     except IndexError, e:
-        print line
+        debugPrint(2,line)
         raise e
     finally:
         f.close()
@@ -159,7 +161,7 @@ def make_blob():
         newsupers.extend(supers)
 
     # Callgraph
-    def build_call(caller, callee):
+    def build_call(pcaller, pcallee):
         db = { 'caller': caller, 'callee':callee }
         return db
 
@@ -168,10 +170,11 @@ def make_blob():
     for infoKey in edges:
         info = edges[infoKey]
         try:
-            caller = functions[canonicalize_decl(info['callerName'],info['callerLoc'])]
-            callee = functions[canonicalize_decl(info['calleeName'],info['calleeLoc'])]
+            caller = functions[canonicalize_decl(info['callerName'],info['callerLoc'])]['funcid']
+            callee = functions[canonicalize_decl(info['calleeName'],info['calleeLoc'])]['funcid']
         except KeyError:
-            print "KeyError %s %s" % (info['callerName'],info['callerLoc'])
+            print "ERROR: Callgraph KeyError %s" % (sys.exc_value)
+            print functions
             continue
         print "Inserted Node"
         callTree.append( build_call(caller,callee) )
@@ -241,8 +244,7 @@ def make_blob():
     blob["types"] = [types[t] for t in typeKeys]
     blob["types"] += [typedefs[t] for t in typedefs]
     blob["impl"] = inheritsTree
-    blob["nodes"] = nodes
-    blob["edges"] = callTree
+    blob["calls"] = callTree
     blob["refs"] = refs
     blob["warnings"] = warnings
     blob["decldef"] = decldef
@@ -351,19 +353,7 @@ schema = dxr.plugins.Schema({
         ("extent", "VARCHAR(30)", False), # Extent (start:end) of the reference
         ("_key", "refid", "refloc")
     ],
-    "nodes": [
-        ("nodeid", "INTEGER", False),
-        ("name", "VARCHAR(256)", True),         # Full type (including pointer stuff)
-        ("returnType", "VARCHAR(256)", True),         # Full type (including pointer stuff)
-        ("namespace", "VARCHAR(256)", True),         # Full type (including pointer stuff)
-        ("type", "VARCHAR(256)", True),         # Full type (including pointer stuff)
-        ("shortName", "VARCHAR(256)", True),         # Full type (including pointer stuff)
-        ("isPtr", "INTEGER", True),         # Full type (including pointer stuff)
-        ("isVirtual", "INTEGER", True),         # Full type (including pointer stuff)
-        ("loc", "_location", True),         # Full type (including pointer stuff)
-        ("_key", "nodeid")
-    ],
-    "edges": [
+    "calls": [
         ("edgeid", "INTEGER", False),
         ("caller","INTEGER",False),
         ("callee","INTEGER",False),
@@ -446,7 +436,6 @@ class CxxHtmlifier:
         if self.blob_file is None:
             return
         def make_link(obj, loc, name, clazz, **kwargs):
-            print "LOC:%s" % obj[loc]
             line, col = obj[loc].split(':')[1:]
             line, col = int(line), int(col)
             kwargs['class'] = clazz
