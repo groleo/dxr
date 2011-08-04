@@ -1,21 +1,43 @@
 #!/usr/bin/env bash
 
-if [ -z "$1" ]; then
+if [ -z "$2" ]; then
   name="${BASH_SOURCE[0]}"
   if [ -z "$name" ]; then
       name=$0
   fi
-  echo "Usage: . $name <srcdir> [<datadir>]"
-  return 0 &>/dev/null
+  echo "Usage: . $name <dxr.config> [<treename>]"
+  return 1 &>/dev/null
   exit 1
 fi
-SRCDIR="$1"
+DXRCONFIG="$1"
+TREENAME="$2"
 
-if [ -z "$2" ]; then
-  export OBJDIR="$1"
-else
-  export OBJDIR="$2"
-fi
+function get_var()
+{
+echo $(PYTHONPATH=$DXRSRC:$PYTHONPATH python - <<HEREDOC
+import dxr
+dxrconfig=dxr.load_config("$DXRCONFIG")
+found=False
+for treecfg in dxrconfig.trees:
+	if treecfg.tree != "$1":
+		continue
+	else:
+		found=True
+		break
+
+if found == False:
+	raise BaseException("Tree[$1] not found in config[$DXRCONFIG]")
+else:
+	try:
+		print("%s"% treecfg.$2)
+	except:
+		raise BaseException("Variable[$2] not found in Tree[$1]")
+HEREDOC
+)
+}
+
+
+#######################
 
 if [ -z "$DXRSRC" ]; then
   echo -n "Setting DXRSRC variable: "
@@ -30,12 +52,18 @@ else
   echo "Using DXRSRC:$DXRSRC"
 fi
 
+OBJDIR=$(get_var "$TREENAME" "objdir")
+
 MAKE=${MAKE:-make}
 
 echo "Finding available DXR plugins..."
 tools=( $(PYTHONPATH=$DXRSRC:$PYTHONPATH python - <<HEREDOC
 import dxr
-files = [x.__file__ for x in dxr.get_active_plugins(None, '$DXRSRC')]
+dxrconfig=dxr.load_config("$DXRCONFIG")
+for treecfg in dxrconfig.trees:
+	if treecfg.tree == "$TREENAME":
+		files = [x.__file__ for x in dxr.get_active_plugins(treecfg, "$DXRSRC")]
+		break
 print ' '.join([x[:x.find('/indexer.py')] for x in files])
 HEREDOC
 ) )
