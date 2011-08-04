@@ -323,6 +323,7 @@ def can_use(treecfg):
   if not dxr.plugins.in_path('llvm-config'):
     raise BaseException("No 'llvm-config' installed")
 
+  return False
   return dxr.plugins.in_path('clang') and dxr.plugins.in_path('llvm-config')
 
 schema = dxr.plugins.Schema({
