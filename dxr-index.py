@@ -50,7 +50,7 @@ def WriteOpenSearch(name, hosturl, virtroot, wwwdir):
     finally:
       fp.close()
   except IOError:
-    print ('Error writing opensearchfile (%s): %s' % (name, sys.exc_info()[1]))
+    print('Error writing opensearchfile (%s): %s' % (name, sys.exc_info()[1]))
     return None
 
 def async_toHTML(treeconfig, srcpath, dstfile):

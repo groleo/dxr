@@ -32,7 +32,7 @@ def get_active_plugins(tree=None, dxrsrc=None):
         print "Warning: plugin %s not found" % name
     return pluglist
   def plugin_filter(module):
-    return (module.__name__ not in config.disabled_plugins) and module.can_use(tree)
+    return module.can_use(tree)
   return filter(plugin_filter, all_plugins)
 
 def load_plugins(dxrsrc=None):

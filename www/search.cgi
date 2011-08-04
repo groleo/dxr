@@ -7,7 +7,6 @@ import sys
 import os
 import ConfigParser
 import re
-import subprocess
 
 # Get the DXR installation point from dxr.config
 if not os.path.exists('dxr.config'):
@@ -23,51 +22,41 @@ def like_escape(val):
   return 'LIKE "%' + val.replace("\\", "\\\\").replace("_", "\\_") \
     .replace("%", "\\%") + '%" ESCAPE "\\"'
 
-def split_type(val):
-    parts = val.split('::')
-    # check for 'type' vs. 'type::member' vs. 'namespace::type::member' or 'namespace::namespace2::type::member'
-    n = None
-    t = None
-    m = None
-
-    if len(parts) == 1:
-        # just a single string, stuff it in type
-        t = val
-    elif len(parts) == 2:
-        t = parts[0]
-        m = parts[1]
-    else:
-        m = parts[-1]
-        t = parts[-2]
-        # use the rest as namespace
-        n = '::'.join(parts[0:-2])
-
-    return n, t, m
-
 def GetLine(loc):
-    parts = loc.split(':')
-    file = dxr.readFile(os.path.join(dxrconfig.wwwdir, tree, parts[0]))
-    line = int(parts[1])
-    if file:
-        result  = '<div class="searchfile"><a href="%s/%s">%s</a></div><ul class="searchresults">' % (tree, parts[0] + '.html#l' + parts[1], loc)
-        lines = file.split('\n')
-        for i in [-1, 0, 1]:
-            num = int(parts[1]) + i
-            result += '<li class="searchresult"><a href="%s/%s">%s:</a>&nbsp;&nbsp;%s</li>' % (tree, parts[0] + '.html#l' + str(num), num, cgi.escape(lines[line+i-1]))
+  # Load the parts
+  parts = loc.split(':')
+  fname, line = parts[0], int(parts[1])
+  if fname not in offset_cache:
+    return '<p>Error: Cannot find file %s</p>' % fname
 
-        result += '</ul>'
-        return result
-    else:
-        return ''
+  # Open up the master file
+  master_text.seek(offset_cache[fname])
 
-def processString(string):
+  output = ('<div class="searchfile"><a href="%s/%s.html#l%d">' +
+    '%s</a></div><ul class="searchresults">\n') % (tree, fname, line, loc)
+  # Show [line - 1, line, line + 1] unless we see more
+  read = [line - 1, line, line + 1]
+  while True:
+    readname, readline, readtext = master_text.readline().split(':', 2)
+    line_num = int(readline)
+    if readname != fname or line_num > read[-1]:
+      break
+    if line_num not in read:
+      continue
+    output += ('<li class="searchresult"><a href="%s/%s.html#l%s">%s:</a>' +
+      '&nbsp;&nbsp;%s</li>\n') % (tree, fname, readline, readline,
+      cgi.escape(readtext))
+  output += '</ul>'
+  return output
+
+def processString(string, path=None, ext=None):
   vrootfix = dxrconfig.virtroot
   if vrootfix == '/':
     vrootfix = ''
+  if ext is not None and ext[0] == '.':
+    ext = ext[1:]
   def printSidebarResults(name, results):
-    if len(results) == 0:
-      return
-    print '<div class="bubble"><span class="title">%s</span><ul>' % name
+    outputtedResults = False
     for res in results:
       # Make sure we're not matching part of the scope
       colon = res[0].rfind(':')
@@ -76,9 +65,13 @@ def processString(string):
       fixloc = res[1].split(':')
       if path and not re.search(path, fixloc[0]):
         continue
+      if not outputtedResults:
+        outputtedResults = True
+        print '<div class="bubble"><span class="title">%s</span><ul>' % name
       print '<li><a href="%s/%s/%s.html#l%s">%s</a></li>' % \
         (vrootfix, tree, fixloc[0], fixloc[1], res[0])
-    print '</ul></div>'
+    if outputtedResults:
+      print '</ul></div>'
 
   # Print smart sidebar
   print '<div id="sidebar">'
@@ -97,7 +90,7 @@ def processString(string):
 
   # Print file sidebar
   printHeader = True
-  filenames = dxr.readFile(os.path.join(dxrconfig.wwwdir, tree, '.dxr_xref', 'file_list.txt'))
+  filenames = dxr.readFile(os.path.join(treecfg.dbdir, 'file_list.txt'))
   if filenames:
     for filename in filenames.split('\n'):
       # Only check in leaf name
@@ -107,29 +100,17 @@ def processString(string):
         if printHeader:
           print '<div class=bubble><span class="title">Files</span><ul>'
           printHeader = False
-        filename = filename.replace(dxrconfig.wwwdir, vrootfix)
+        filename = vrootfix + '/' + tree + '/' + filename
         print '<li><a href="%s.html">%s</a></li>' % (filename, m.group(1))
     if not printHeader:
       print "</ul></div>"
 
   print '</div><div id="content">'
 
-  # Check for strings like 'foo::bar'
-  halves = string.split('::')
-  if len(halves) == 2:
-    count = processMember(halves[1], halves[0], True)
-    if count > 0:
-      # we printed results, so don't bother with a text search
-      return
-
   # Text search results
   prevfile, first = None, True
-  file_index = os.path.join(dxrconfig.wwwdir, tree, '.dxr_xref', 'file_index.txt')
-  if not os.path.exists(file_index):
-    raise BaseException("No such file %s" % file_index)
-
-  index_file = open(file_index)
-  for line in index_file:
+  master_text.seek(0)
+  for line in master_text:
     # The index file is <path>:<line>:<text>
     colon = line.find(':')
     colon2 = line.find(':', colon)
@@ -165,7 +146,7 @@ def processType(type, path=None):
       print '<h3>%s (%s)</h3>' % (tname, info)
       print GetLine(type['tloc'])
 
-def processDerived(derived):
+def processDerived(derived, path=None):
   components = derived.split('::')
   if len(components) > 1:
     # Find out if the entire thing is a class or not
@@ -237,11 +218,15 @@ def processWarnings(warnings, path=None):
   if warnings == '*':
     warnings = ''
 
+  num_warnings = 0
   for w in conn.execute("SELECT wloc, wmsg FROM warnings WHERE wmsg LIKE '%" +
       warnings + "%' ORDER BY wloc COLLATE loc;").fetchall():
     if not path or re.search(path, w[0]):
       print '<h3>%s</h3>' % w[1]
       print GetLine(w[0])
+      num_warnings += 1
+  if num_warnings == 0:
+    print '<h3>No warnings found.</h3>'
 
 def processCallers(caller, path=None, funcid=None):
   # I could handle this with a single call, but that gets a bit complicated.
@@ -281,74 +266,52 @@ def processCallers(caller, path=None, funcid=None):
 # and 0 as the buffer size (unbuffered)
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
 
-form = cgi.FieldStorage()
+# Load query parameters
+fieldStorage = cgi.FieldStorage()
+form = dict((key, fieldStorage.getvalue(key)) for key in fieldStorage.keys())
 
-string = None
-path = None
-ext = None
-type = ''
-derived = ''
-member = ''
-tree = '' #mozilla-central' # just a default for now
-macro = ''
-callers = ''
-callees = ''
-warnings = ''
+# Which tree are we searching
+if 'tree' in form:
+  tree = form['tree']
+else:
+  # XXX: all trees? default trees? What to do?
+  tree = ''
 
-if form.has_key('string'):
-    string = form['string'].value
+# XXX: We're assuming dxr.config is in the same place as the web directory.
+# May want to assume standard system location or something for easier large
+# deployments
 
-if form.has_key('path'):
-    path = form['path'].value
-
-if form.has_key('ext'):
-    ext = form['ext'].value
-    # remove . if present
-    ext = ext.replace('.', '')
-
-if form.has_key('type'):
-    type = form['type'].value
-
-if form.has_key('derived'):
-    derived = form['derived'].value
-
-if form.has_key('member'):
-    member = form['member'].value
-
-if form.has_key('tree'):
-    tree = form['tree'].value
-if tree == '':
-  raise BaseException("tree variable is void")
-
-if form.has_key('macro'):
-    macro = form['macro'].value
-
-if form.has_key('callers'):
-    callers = form['callers'].value
-
-if form.has_key('callees'):
-    callees = form['callees'].value
-
-if form.has_key('warnings'):
-    warnings = form['warnings'].value
-
-htmldir = os.path.join('./', tree)
-
-# TODO: kill off hard coded path
+# Load the configuration files
 dxrconfig = dxr.load_config('./dxr.config')
 for treecfg in dxrconfig.trees:
   if treecfg.tree == tree:
     dxrconfig = treecfg
     break
+else:
+  # XXX: no tree, we're defaulting to the last one
+  dxrconfig = treecfg
 
-#wwwdir = config.get('Web', 'wwwdir')
-
+# Load the database
 dbname = tree + '.sqlite'
-dxrdb = os.path.join(dxrconfig.wwwdir, tree, '.dxr_xref', dbname)
+dxrdb = os.path.join(treecfg.dbdir, dbname)
 if not os.path.exists(dxrdb):
   raise BaseException("No such file %s" % dxrdb )
 
 conn = sqlite3.connect(dxrdb)
+conn.execute('PRAGMA temp_store = MEMORY;')
+
+# Master text index, load it
+master_text = open(os.path.join(treecfg.dbdir, 'file_index.txt'), 'r')
+f = open(os.path.join(treecfg.dbdir, 'index_index.txt'), 'r')
+offset_cache = {}
+try:
+  for line in f:
+    l = line.split(':')
+    offset_cache[l[0]] = int(l[-1])
+finally:
+  f.close()
+
+# This makes results a lot more fun!
 def collate_loc(str1, str2):
   parts1 = str1.split(':')
   parts2 = str2.split(':')
@@ -358,15 +321,11 @@ def collate_loc(str1, str2):
     parts2[i] = int(parts2[i])
   return cmp(parts1, parts2)
 conn.create_collation("loc", collate_loc)
+conn.row_factory = sqlite3.Row
 
-conn.execute('PRAGMA temp_store = MEMORY;')
+# Output the text results.
 
-if string:
-  titlestr = string
-else:
-  titlestr = ''
 print 'Content-Type: text/html\n'
-print dxrconfig.getTemplateFile("dxr-search-header.html") % cgi.escape(titlestr)
 
 # XXX... plugins!
 searches = [
@@ -389,23 +348,9 @@ for param, dispatch, hasSidebar, titlestr, optargs in searches:
     dispatch(form[param], **kwargs)
     break
 else:
-    print '<div id="content">'
-    if type:
-        if member:
-            processMember(member, type, True)
-        else:
-            processType(type)
-    elif derived:
-        processDerived(derived)
-    elif member:
-        processMember(member, type, True)
-    elif macro:
-        processMacro(macro)
-    elif callers:
-        processCallers(callers)
-    elif callees:
-        processCallees(callees)
-    elif warnings:
-      processWarnings(warnings)
+  print dxrconfig.getTemplateFile("dxr-search-header.html") % 'Error'
+  print '<h3>Error: unknown search parameters</h3>'
+
+master_text.close()
 print dxrconfig.getTemplateFile("dxr-search-footer.html")
 
