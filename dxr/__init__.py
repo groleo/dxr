@@ -1,6 +1,7 @@
 import marshal as cPickle
 from ConfigParser import ConfigParser
 from hashlib import sha1
+import dxr.languages
 import imp
 import os, sys
 import string
@@ -18,12 +19,18 @@ def get_active_plugins(tree=None, dxrsrc=None):
     if dxrsrc is None and tree is not None:
       dxrsrc = tree.dxrroot
     all_plugins = load_plugins(dxrsrc)
-  if dxrsrc is None and tree is not None:
-    dxrsrc = tree.dxrroot
-  if dxrsrc == None:
-    print "dxrsrc is not set"
-    return None
-  config = load_config(os.path.join(dxrsrc,'dxr.config'))
+
+  if tree is not None and 'plugins' in tree.__dict__:
+    plugins = [x.strip() for x in tree.plugins.split(',')]
+    pluglist = []
+    for name in plugins:
+      for plugin in all_plugins:
+        if plugin.__name__ == name:
+          pluglist.append(plugin)
+          break
+      else:
+        print "Warning: plugin %s not found" % name
+    return pluglist
   def plugin_filter(module):
     return (module.__name__ not in config.disabled_plugins) and module.can_use(tree)
   return filter(plugin_filter, all_plugins)
@@ -60,7 +67,7 @@ def store_big_blob(tree, blob):
   #    pass
   f = open(os.path.join(dbdir, 'index_blob.dat'), 'wb')
   try:
-    cPickle.dump(blob, f, 2)
+    cPickle.dump((blob, dxr.languages.language_data), f, 2)
   finally:
     f.close()
   #for fname in filelist:
@@ -79,13 +86,15 @@ def load_big_blob(tree):
   dbdir = os.path.join(htmlroot, '.dxr_xref')
   f = open(os.path.join(dbdir, 'index_blob.dat'), 'rb')
   try:
-    return cPickle.load(f)
+    big_blob, dxr.languages.language_data = cPickle.load(f)
+    return big_blob
   finally:
     f.close()
 
 class DxrConfig(object):
   def __init__(self, config, tree=None):
     self._tree = tree
+    self._loadOptions(config, 'DXR')
     self.templates = os.path.abspath(config.get('DXR', 'templates'))
     if config.has_option('DXR', 'dxrroot'):
       self.dxrroot = os.path.abspath(config.get('DXR', 'dxrroot'))
@@ -115,14 +124,17 @@ class DxrConfig(object):
         self.trees.append(DxrConfig(config, section))
     else:
       self.tree = self._tree
-      for opt in config.options(tree):
-        self.__dict__[opt] = config.get(tree, opt)
-        if opt.endswith('dir'):
-          self.__dict__[opt] = os.path.abspath(self.__dict__[opt])
+      self._loadOptions(config, tree)
       if not 'dbdir' in self.__dict__:
         # Build the dbdir from [wwwdir]/tree
         self.dbdir = os.path.join(self.wwwdir, tree + '-current', '.dxr_xref')
       self.isdblive = self.dbdir.startswith(self.wwwdir)
+
+  def _loadOptions(self, config, section):
+      for opt in config.options(section):
+        self.__dict__[opt] = config.get(section, opt)
+        if opt.endswith('dir'):
+          self.__dict__[opt] = os.path.abspath(self.__dict__[opt])
 
   def getTemplateFile(self, name):
     tmpl = readFile(os.path.join(self.templates, name))

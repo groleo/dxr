@@ -1,4 +1,5 @@
 import csv
+from dxr.languages import register_language_table
 import dxr.plugins
 import os
 
@@ -11,6 +12,7 @@ variables = {}
 references = {}
 warnings = []
 macros = {}
+calls = {}
 
 def process_decldef(args):
   name, defloc, declloc = args['name'], args['defloc'], args['declloc']
@@ -25,7 +27,7 @@ def process_typedef(typeinfo):
   typeinfo['tkind'] = 'typedef'
 
 def process_function(funcinfo):
-  functions[(funcinfo['flongname'], funcinfo['floc'])] = funcinfo
+  functions[(funcinfo['fqualname'], funcinfo['floc'])] = funcinfo
 
 def process_impl(info):
   inheritance[info['tbname'], info['tbloc'], info['tcname'], info['tcloc']]=info
@@ -45,6 +47,13 @@ def process_macro(macro):
   macros[macro['macroname'], macro['macroloc']] = macro
   if 'macrotext' in macro:
     macro['macrotext'] = macro['macrotext'].replace("\\\n", "\n").strip()
+
+def process_call(call):
+  if 'callername' in call:
+    calls[call['callername'], call['callerloc'],
+          call['calleename'], call['calleeloc']] = call
+  else:
+    calls[call['calleename'], call['calleeloc']] = call
 
 def load_indexer_output(fname):
   f = open(fname, "rb")
@@ -79,7 +88,6 @@ def make_blob():
 
   # Produce all scopes
   scopes = {}
-  nextIndex = 1
   typeKeys = set()
   for t in types:
     key = canonicalize_decl(t[0], t[1])
@@ -87,12 +95,10 @@ def make_blob():
       key = recanon_decl(t[0], t[1])
     if key not in scopes:
       typeKeys.add(key)
-      types[key]['tid'] = scopes[key] = nextIndex
-      nextIndex += 1
+      types[key]['tid'] = scopes[key] = dxr.plugins.next_global_id()
   # Typedefs need a tid, but they are not a scope
   for t in typedefs:
-    typedefs[t]['tid'] = nextIndex
-    nextIndex += 1
+    typedefs[t]['tid'] = dxr.plugins.next_global_id()
   funcKeys = set()
   for f in functions:
     key = canonicalize_decl(f[0], f[1])
@@ -100,8 +106,7 @@ def make_blob():
       key = recanon_decl(f[0], f[1])
     if key not in scopes:
       funcKeys.add(key)
-      functions[key]['funcid'] = scopes[key] = nextIndex
-      nextIndex += 1
+      functions[key]['funcid'] = scopes[key] = dxr.plugins.next_global_id()
 
   # Variables aren't scoped, but we still need to refer to them in the same
   # manner, so we'll unify variables with the scope ids
@@ -109,12 +114,10 @@ def make_blob():
   for v in variables:
     key = (v[0], v[1])
     if key not in varKeys:
-      varKeys[key] = variables[v]['varid'] = nextIndex
-      nextIndex += 1
+      varKeys[key] = variables[v]['varid'] = dxr.plugins.next_global_id()
 
   for m in macros:
-    macros[m]['macroid'] = nextIndex
-    nextIndex += 1
+    macros[m]['macroid'] = dxr.plugins.next_global_id()
 
   # Scopes are now defined, this allows us to modify structures for sql prep
 
@@ -142,8 +145,13 @@ def make_blob():
     # Get all known relations
     subs = childMap.setdefault(child, [])
     supers = parentMap.setdefault(base, [])
-    inheritsTree.extend([build_inherits(base, sub, None) for sub in subs])
-    inheritsTree.extend([build_inherits(sup, child, None) for sup in supers])
+    # Use this information
+    for sub in subs:
+      inheritsTree.append(build_inherits(base, sub, None))
+      parentMap[sub].append(base)
+    for sup in supers:
+      inheritsTree.append(build_inherits(sup, child, None))
+      childMap[sup].append(child)
 
     # Carry through these relations
     newsubs = childMap.setdefault(base, [])
@@ -156,8 +164,11 @@ def make_blob():
   # Fix up (name, loc) pairs to ids
   def repairScope(info):
     if 'scopename' in info:
-      info['scopeid'] = scopes[canonicalize_decl(info.pop('scopename'),
-        info.pop('scopeloc'))]
+      try:
+        info['scopeid'] = scopes[canonicalize_decl(info.pop('scopename'),
+          info.pop('scopeloc'))]
+      except KeyError:
+        pass
     else:
       info['scopeid'] = 0
 
@@ -206,25 +217,84 @@ def make_blob():
         ('types', typedefs, 'tid'), ('variables', variables, 'varid') ]
       for tblname, tbl, key in tmap:
         if defn in tbl:
-          decldef.append({"declloc": decl[1], "defid": tbl[defn][key],
-            "table": tblname})
+          declo = {"declloc": decl[1],"defid": tbl[defn][key],"table": tblname}
+          if "extent" in tbl[decl]:
+            declo["extent"] = tbl[decl]["extent"]
+          decldef.append(declo)
           break
+
+  # Callgraph futzing
+  callgraph = []
+  for callkey in calls:
+    call = calls[callkey]
+    if 'callername' in call:
+      source = canonicalize_decl(call.pop("callername"), call.pop("callerloc"))
+      call['callerid'] = functions[source]['funcid']
+    else:
+      call['callerid'] = 0
+    target = canonicalize_decl(call.pop("calleename"), call.pop("calleeloc"))
+    if target in functions:
+      call['targetid'] = functions[target]['funcid']
+    elif target in variables:
+      call['targetid'] = variables[target]['varid']
+    callgraph.append(call)
+
+  overridemap = {}
+  for func in funcKeys:
+    funcinfo = functions[func]
+    if "overridename" not in funcinfo:
+      continue
+    base = canonicalize_decl(funcinfo.pop("overridename"),
+      funcinfo.pop("overrideloc"))
+    if base not in functions:
+      continue
+    basekey = functions[base]['funcid']
+    subkey = funcinfo['funcid']
+    overridemap.setdefault(basekey, set()).add(subkey)
+
+  rescan = [x for x in overridemap]
+  while len(rescan) > 0:
+    base = rescan.pop(0)
+    childs = overridemap[base]
+    prev = len(childs)
+    temp = childs.union(*(overridemap.get(sub, []) for sub in childs))
+    childs.update(temp)
+    if len(childs) != prev:
+      rescan.append(base)
+  targets = []
+  for base, childs in overridemap.iteritems():
+    targets.append({"targetid": -base, "funcid": base})
+    for child in childs:
+      targets.append({"targetid": -base, "funcid": child})
+  for call in callgraph:
+    if call['calltype'] == 'virtual':
+      targetid = call['targetid']
+      call['targetid'] = -targetid
+      if targetid not in overridemap:
+        overridemap[targetid] = set()
+        targets.append({'targetid': -targetid, 'funcid': targetid})
 
   # Ball it up for passing on
   blob = {}
   def mdict(info, key):
     return (info[key], info)
-  blob["scopes"] = dict([mdict({"scopeid": scopes[s], "sname": s[0],
-    "sloc": s[1]}, "scopeid") for s in scopes])
-  blob["functions"] = dict([mdict(functions[f], "funcid") for f in funcKeys])
-  blob["variables"] = dict([mdict(variables[v], "varid") for v in varKeys])
-  blob["types"] = [types[t] for t in typeKeys]
-  blob["types"] += [typedefs[t] for t in typedefs]
-  blob["impl"] = inheritsTree
+  blob["typedefs"] = [typedefs[t] for t in typedefs]
   blob["refs"] = refs
   blob["warnings"] = warnings
   blob["decldef"] = decldef
   blob["macros"] = macros
+  blob["callers"] = callgraph
+  blob["targets"] = targets
+  # Add to the languages table
+  register_language_table("native", "scopes", dict((scopes[s],
+    {"scopeid": scopes[s], "sname": s[0], "sloc": s[1]}) for s in scopes))
+  register_language_table("native", "types", (types[t] for t in typeKeys))
+  register_language_table("native", "types", blob["typedefs"])
+  register_language_table("native", "functions",
+    dict(mdict(functions[f], "funcid") for f in funcKeys))
+  register_language_table("native", "variables",
+    dict(mdict(variables[v], "varid") for v in varKeys))
+  register_language_table("native", "impl", inheritsTree)
   return blob
 
 def post_process(srcdir, objdir):
@@ -232,37 +302,15 @@ def post_process(srcdir, objdir):
   for f in file_names:
     load_indexer_output(f)
   blob = make_blob()
-
-  # Reindex everything by file
-  def schema():
-    return { "scopes": [], "functions": [], "variables": [], "types": [],
-      "refs": [], "warnings": [], "decldef": [], "macros": [] }
-  files = {}
-  def add_to_files(table, loc):
-    iskey = isinstance(blob[table], dict)
-    for row in blob[table]:
-      if iskey:
-        row = blob[table][row]
-      f = row[loc].split(":")[0]
-      files.setdefault(f, schema())[table].append(row)
-  add_to_files("scopes", "sloc")
-  add_to_files("functions", "floc")
-  add_to_files("variables", "vloc")
-  add_to_files("types", "tloc")
-  add_to_files("refs", "refloc")
-  add_to_files("warnings", "wloc")
-  add_to_files("decldef", "declloc")
-  add_to_files("macros", "macroloc")
-
-  # Normalize path names
-  blob["byfile"] = {}
-  while len(files) > 0:
-    f, oldtbl = files.popitem()
-    real = os.path.relpath(os.path.realpath(os.path.join(srcdir, f)), srcdir)
-    realtbl = blob["byfile"].setdefault(real, schema())
-    for table in oldtbl:
-      realtbl[table].extend(oldtbl[table])
   return blob
+
+def pre_html_process(treecfg, blob):
+  blob["byfile"] = dxr.plugins.break_into_files(blob, {
+    "refs": "refloc",
+    "warnings": "wloc",
+    "decldef": "declloc",
+    "macros": "macroloc"
+  })
 
 def sqlify(blob):
   return schema.get_data_sql(blob)
@@ -278,57 +326,11 @@ def can_use(treecfg):
   return dxr.plugins.in_path('clang') and dxr.plugins.in_path('llvm-config')
 
 schema = dxr.plugins.Schema({
-  # Scope definitions: a scope is anything that is both interesting (i.e., not
-  # a namespace) and can contain other objects. The IDs for this scope should be
-  # IDs in other tables as well; the table its in can disambiguate which type of
-  # scope you're looking at.
-  "scopes": [
-    ("scopeid", "INTEGER", False),   # An ID for this scope
-    ("sname", "VARCHAR(256)", True), # Name of the scope
-    ("sloc", "_location", True),     # Location of the canonical decl
-    ("_key", "scopeid")
-  ],
-  # Type definitions: anything that defines a type per the relevant specs.
-  "types": [
-    ("tid", "INTEGER", False),            # Unique ID for the type
-    ("scopeid", "INTEGER", False),        # Scope this type is defined in
-    ("tname", "VARCHAR(256)", False),     # Simple name of the type
-    ("tqualname", "VARCHAR(256)", False), # Fully-qualified name of the type
-    ("tloc", "_location", False),         # Location of canonical decl
-    ("tkind", "VARCHAR(32)", True),       # Kind of type (e.g., class, union)
+  # Typedef information in the tables
+  "typedefs": [
+    ("tid", "INTEGER", False),           # The typedef's tid (also in types)
+    ("ttypedef", "VARCHAR(256)", False), # The long name of the type
     ("_key", "tid")
-  ],
-  # Inheritance relations: note that we store the full transitive closure in
-  # this table, so if A extends B and B extends C, we'd have (A, C) stored in
-  # the table as well; this is necessary to make SQL queries work, since there's
-  # no "transitive closure lookup expression".
-  "impl": [
-    ("tbase", "INTEGER", False),      # tid of base type
-    ("tderived", "INTEGER", False),   # tid of derived type
-    ("inhtype", "VARCHAR(32)", True), # Type of inheritance; NULL is indirect
-    ("_key", "tbase", "tderived")
-  ],
-  # Functions: functions, methods, constructors, operator overloads, etc.
-  "functions": [
-    ("funcid", "INTEGER", False),         # Function ID (also in scopes)
-    ("scopeid", "INTEGER", False),        # Scope defined in
-    ("fname", "VARCHAR(256)", False),     # Short name (no args)
-    ("flongname", "VARCHAR(512)", False), # Fully qualified name, including args
-    ("floc", "_location", True),          # Location of definition
-    ("modifiers", "VARCHAR(256)", True),  # Modifiers (e.g., private)
-    ("_key", "funcid")
-  ],
-  # Variables: class, global, local, enum constants; they're all in here
-  # Variables are of course not scopes, but for ease of use, they use IDs from
-  # the same namespace, no scope will have the same ID as a variable and v.v.
-  "variables": [
-    ("varid", "INTEGER", False),         # Variable ID
-    ("scopeid", "INTEGER", False),       # Scope defined in
-    ("vname", "VARCHAR(256)", False),    # Short name
-    ("vloc", "_location", True),         # Location of definition
-    ("vtype", "VARCHAR(256)", True),     # Full type (including pointer stuff)
-    ("modifiers", "VARCHAR(256)", True), # Modifiers for the declaration
-    ("_key", "varid")
   ],
   # References to functions, types, variables, etc.
   "refs": [
@@ -347,13 +349,31 @@ schema = dxr.plugins.Schema({
     "defid": ("INTEGER", False),    # ID of the definition instance
     "declloc": ("_location", False) # Location of the declaration
   },
+  # Macros: this is a table of all of the macros we come across in the code.
   "macros": [
-     ("macroid", "INTEGER", False),
-     ("macroloc", "_location", False),
-     ("macroname", "VARCHAR(256)", False),
-     ("macroargs", "VARCHAR(256)", True),
-     ("macrotext", "TEXT", True),
+     ("macroid", "INTEGER", False),        # The macro id, for references
+     ("macroloc", "_location", False),     # The macro definition
+     ("macroname", "VARCHAR(256)", False), # The name of the macro
+     ("macroargs", "VARCHAR(256)", True),  # The args of the macro (if any)
+     ("macrotext", "TEXT", True),          # The macro contents
      ("_key", "macroid", "macroloc"),
+  ],
+  # The following two tables are combined to form the callgraph implementation.
+  # In essence, the callgraph can be viewed as a kind of hypergraph, where the
+  # edges go from functions to sets of functions and variables. For use in the
+  # database, we are making some big assumptions: the targetid is going to be
+  # either a function or variable (the direct thing we called); if the function
+  # is virtual or the target is a variable, we use the targets table to identify
+  # what the possible implementations could be.
+  "callers": [
+    ("callerid", "INTEGER", False), # The function in which the call occurs
+    ("targetid", "INTEGER", False), # The target of the call
+    ("_key", "callerid", "targetid")
+  ],
+  "targets": [
+    ("targetid", "INTEGER", False), # The target of the call
+    ("funcid", "INTEGER", False),   # One of the functions in the target set
+    ("_key", "targetid", "funcid")
   ]
 })
 
@@ -366,7 +386,6 @@ class CxxHtmlifier:
     self.source = dxr.readFile(srcpath)
     self.srcpath = srcpath.replace(treecfg.sourcedir + '/', '')
     self.blob_file = blob["byfile"].get(self.srcpath, None)
-    self.blob = blob
 
   def collectSidebar(self):
     if self.blob_file is None:
@@ -381,21 +400,21 @@ class CxxHtmlifier:
         img = 'images/icons/page_white_wrench.png'
       if scope in df and df[scope] > 0:
         return (df[name], loc.split(':')[1], df[name], img,
-          self.blob["scopes"][df[scope]]["sname"])
+          dxr.languages.get_row_for_id("scopes", df[scope])["sname"])
       return (df[name], loc.split(':')[1], df[name], img)
     for df in self.blob_file["types"]:
       yield make_tuple(df, "tqualname", "tloc", "scopeid")
     for df in self.blob_file["functions"]:
-      yield make_tuple(df, "flongname", "floc", "scopeid")
+      yield make_tuple(df, "fqualname", "floc", "scopeid")
     for df in self.blob_file["variables"]:
-      if "scopeid" in df and df["scopeid"] in self.blob["functions"]:
+      if "scopeid" in df and dxr.languages.get_row_for_id("functions", df["scopeid"]) is not None:
         continue
       yield make_tuple(df, "vname", "vloc", "scopeid")
-    tblmap = { "functions": "flongname", "types": "tqualname" }
+    tblmap = { "functions": "fqualname", "types": "tqualname" }
     for df in self.blob_file["decldef"]:
       table = df["table"]
       if table in tblmap:
-        yield make_tuple(self.blob[table][df["defid"]], tblmap[table],
+        yield make_tuple(dxr.languages.get_row_for_id(table, df["defid"]), tblmap[table],
           df["declloc"], "scopeid", True)
     for df in self.blob_file["macros"]:
       yield make_tuple(df, "macroname", "macroloc")
@@ -415,30 +434,33 @@ class CxxHtmlifier:
   def getLinkRegions(self):
     if self.blob_file is None:
       return
-    def make_link(obj, loc, name, clazz, **kwargs):
-      if 'extent' in obj:
-        start, end = obj['extent'].split(':')
-        start, end = int(start), int(end)
-      else:
-        line, col = obj[loc].split(':')[1:]
-        line, col = int(line), int(col)
-        start = line, col
-        end = line, col + len(obj[name])
-        kwargs['line'] =  line
+    def make_link(obj, clazz, rid):
+      start, end = obj['extent'].split(':')
+      start, end = int(start), int(end)
+      kwargs = {}
+      kwargs['rid'] = rid
       kwargs['class'] = clazz
       return (start, end, kwargs)
-    for df in self.blob_file["variables"]:
-      yield make_link(df, 'vloc', 'vname', 'var', rid=df['varid'])
-    for df in self.blob_file["functions"]:
-      yield make_link(df, 'floc', 'fname', 'func', rid=df['funcid'])
-    for df in self.blob_file["types"]:
-      yield make_link(df, 'tloc', 'tqualname', 't', rid=df['tid'])
-    for df in self.blob_file["macros"]:
-      yield make_link(df, "macroloc", "macroname", "m", rid=df['macroid'])
-    for df in self.blob_file["refs"]:
-      if "extent" in df:
-        start, end = df["extent"].split(':')
-        yield (int(start), int(end), {'class': 'ref', 'rid': df['refid']})
+    tblmap = {
+      "variables": ("var", "varid"),
+      "functions": ("func", "funcid"),
+      "types": ("t", "tid"),
+      "refs": ("ref", "refid"),
+    }
+    for tablename in tblmap:
+      tbl = self.blob_file[tablename]
+      kind, rid = tblmap[tablename]
+      for df in tbl:
+        if 'extent' in df:
+          yield make_link(df, kind, df[rid])
+    for decl in self.blob_file["decldef"]:
+      if 'extent' not in decl: continue
+      yield make_link(decl, tblmap[decl["table"]][0], decl["defid"])
+    for macro in self.blob_file["macros"]:
+      line, col = macro['macroloc'].split(':')[1:]
+      line, col = int(line), int(col)
+      yield ((line, col), (line, col + len(macro['macroname'])),
+        {'class': 'm', 'rid': macro['macroid']})
 
   def getLineAnnotations(self):
     if self.blob_file is None:

@@ -89,29 +89,36 @@ class HtmlBuilder:
     out.write(self.html_main_footer)
 
   def writeMainBody(self, out):
+    # So, we have a minor issue with writing out the main body. Some of our
+    # information is (line, col) information and others is file offset. Also,
+    # we don't necessarily have the information in sorted order. This means we
+    # have to hope that all ranges are in a strict tree hierarchy, otherwis
+    # things will blow up.
     syntax_regions = self._zipper("get_syntax_regions")
     links = self._zipper("get_link_regions")
-    lines = self._zipper("get_line_annotations")
+    line_notes = self._zipper("get_line_annotations")
 
-    # Split up the entire source, and annotate each char invidually
-    line_markers = [0]
+    # Blow the contents of the file up into an array; we escape the source and
+    # build the line map at the same time.
+    line_map = [0]
     closure = ['', 0]
     def handle_char(x):
       if x == '\n':
-        line_markers.append(closure[1])
+        line_map.append(closure[1])
       elif closure[0] == '\r':
-        line_markers.append(closure[1] - 1)
+        line_map.append(closure[1] - 1)
       closure[0] = x
       closure[1] += 1
-      if x == '\r' or x == '\n': return ''
       return cgi.escape(x)
     chars = [handle_char(x) for x in self.source]
     chars.append('')
 
     def off(val):
       if isinstance(val, tuple):
-        return line_markers[val[0] - 1] + val[1]
+        return line_map[val[0] - 1] + val[1]
       return val
+    # Produce all of the syntax regions and links. Sincerely hope that the two
+    # do not produce partially-overlapping results.
     for syn in syntax_regions:
       chars[off(syn[0])] = '<span class="%s">%s' % (syn[2], chars[off(syn[0])])
       chars[off(syn[1]) - 1] += '</span>'
@@ -121,21 +128,17 @@ class HtmlBuilder:
         chars[off(link[0])])
       chars[off(link[1]) - 1] += '</a>'
 
-    # the hack is that we need the first and end to work better
-    # The last "char" is the place holder for the first line entry
-    line_markers[0] = -1
-    # Line attributes
-    for l in lines:
-      chars[line_markers[l[0] - 1]] = \
-        ' '.join([attr + '="' + str(l[1][attr]) + '"' for attr in l[1]])
-    line_num = 2 # First line is special
-    for ind in line_markers[1:]:
-      chars[ind] = '</div><div %s id="l%d"><a class="ln" href="#l%d">%d</a>' % \
-        (chars[ind], line_num, line_num, line_num)
-      line_num += 1
-    out.write('<div %s id="l1"><a class="ln" href="l1">1</a>' % chars[-1])
-    chars[-1] = '</div>'
-    out.write(''.join(chars))
+    # Use the line annotations to build a map of the gutter annotations.
+    line_mods = [[num + 1, ''] for num in xrange(len(line_map))]
+    for l in line_notes:
+      line_mods[l[0] - 1][1] += ' ' + ' '.join(
+        [attr + '="' + str(l[1][attr]) + '"' for attr in l[1]])
+    line_divs = ['<div%s id="l%d"><a class="ln" href="#l%d">%d</a></div>' %
+      (mod[1], mod[0], mod[0], mod[0]) for mod in line_mods]
+
+    # Okay, finally, combine everything together into the file.
+    out.write('<div id="linenumbers">%s</div><div id="code">%s</div>' %
+      (''.join(line_divs), ''.join(chars)))
 
   def writeGlobalScript(self, out):
     """ Write any extra JS for the page. Lines of script are stored in self.globalScript."""
@@ -156,6 +159,8 @@ def build_htmlifier_map(plugins):
   def add_to_map(ending, hmap, pluginname, append):
     for x in ['get_sidebar_links', 'get_link_regions', 'get_line_annotations',
         'get_syntax_regions']:
+      if x not in hmap:
+        continue
       details = htmlifier_map[ending].setdefault(x, [None])
       if append:
         details.append((pluginname, hmap[x]))
@@ -164,11 +169,11 @@ def build_htmlifier_map(plugins):
   # Add/append details for each map
   for plug in plugins:
     plug_map = plug.get_htmlifiers()
-    nosquash = 'no-override' in plug_map
     for ending in plug_map:
       if ending not in htmlifier_map:
         ending_iterator.append(ending)
         htmlifier_map[ending] = {}
+      nosquash = 'no-override' in plug_map[ending]
       add_to_map(ending, plug_map[ending], plug.__name__, nosquash)
   # Sort the endings by maximum length, so that we can just find the first one
   # in the list

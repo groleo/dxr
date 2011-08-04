@@ -24,6 +24,13 @@ def getType(typeinfo, refs=[], deep=False):
       "url": locUrl(typeinfo['tloc'])
     }]
   }
+  for typedef in conn.execute("SELECT * FROM typedefs WHERE tid=?",
+      (typeinfo['tid'],)):
+    typebase['children'].append({
+      "label": 'Real value %s' % (typedef['ttypedef']),
+      'icon': 'icon-def'
+    })
+  typebase['children'].extend(getDeclarations(typeinfo['tid']))
   if not deep:
     return typebase
   members = {
@@ -44,7 +51,7 @@ def getType(typeinfo, refs=[], deep=False):
     elif qual == 'v':
       member = getVariable(memid)
     members["children"].append(member)
-  if len(members) > 0:
+  if len(members["children"]) > 0:
     typebase["children"].append(members)
 
   basenode = {
@@ -116,12 +123,26 @@ def getVariable(varinfo, refs=[]):
     varbase['children'].append(refnode)
   return varbase
 
-def getFunction(funcinfo, refs=[]):
+def getCallee(targetid):
+  cur = conn.cursor()
+  cur.execute("SELECT * FROM functions WHERE funcid=?", (targetid,))
+  if cur.rowcount > 0:
+    return getFunction(cur.fetchone())
+  cur.execute("SELECT * FROM variables WHERE varid=?", (targetid,))
+  if cur.rowcount > 0:
+    return getVariable(cur.fetchone())
+  cur.execute("SELECT funcid FROM targets WHERE targetid=?", (targetid,))
+  refnode = { "label": "Dynamic call", "children": [] }
+  for row in cur:
+    refnode['children'].append(getFunction(row[0]))
+  return refnode
+
+def getFunction(funcinfo, refs=[], useCallgraph=False):
   if isinstance(funcinfo, int):
     funcinfo = conn.execute("SELECT * FROM functions WHERE funcid=?",
       (funcinfo,)).fetchone()
   funcbase = {
-    "label": funcinfo['flongname'],
+    "label": '%s %s%s' % (funcinfo['ftype'], funcinfo['fqualname'], funcinfo['fargs']),
     "icon": "icon-member",
     "children": [{
       "label": 'Defined at %s' % (funcinfo['floc']),
@@ -129,6 +150,21 @@ def getFunction(funcinfo, refs=[]):
       "url": locUrl(funcinfo['floc'])
     }]
   }
+  # Reimplementations
+  for row in conn.execute("SELECT * FROM functions LEFT JOIN targets ON " +
+      "targets.funcid = functions.funcid WHERE targetid=? AND " +
+      "targets.funcid != ?",
+      (-funcinfo['funcid'], funcinfo['funcid'])):
+    funcbase['children'].append({
+      "label": 'Reimplemented by %s%s at %s' % (row['fqualname'], row['fargs'],
+        row['floc']),
+      "icon": "icon-def",
+      "url": locUrl(row['floc'])
+    })
+  funcbase['children'].extend(getDeclarations(funcinfo['funcid']))
+
+
+  # References
   refnode = {
     "label": "References",
     "children": []
@@ -141,6 +177,24 @@ def getFunction(funcinfo, refs=[]):
     })
   if len(refnode['children']) > 0:
     funcbase['children'].append(refnode)
+
+  # Callgraph
+  if useCallgraph:
+    caller = { "label": "Calls", "children": [] }
+    callee = { "label": "Called by", "children": [] }
+    # This means that we want to display callee/caller information
+    for info in conn.execute("SELECT callerid FROM callers WHERE targetid=? " +
+        "UNION SELECT callerid FROM callers LEFT JOIN targets " +
+        "ON (callers.targetid = targets.targetid) WHERE funcid=?",
+        (funcinfo['funcid'], funcinfo['funcid'])):
+      callee['children'].append(getFunction(info[0]))
+    for info in conn.execute("SELECT targetid FROM callers WHERE callerid=?",
+        (funcinfo['funcid'],)):
+      caller['children'].append(getCallee(info[0]))
+    if len(caller['children']) > 0:
+      funcbase['children'].append(caller)
+    if len(callee['children']) > 0:
+      funcbase['children'].append(callee)
   return funcbase
 
 def printError():
@@ -175,7 +229,7 @@ def printFunction():
   row = conn.execute("SELECT fname, floc, flongname FROM functions" +
     " WHERE funcid=?", (refid,)).fetchone()
   refs = conn.execute("SELECT * FROM refs WHERE refid=?",(refid,))
-  printTree(json.dumps(getFunction(row, refs)))
+  printTree(json.dumps(getFunction(row, refs, True)))
 
 def printReference():
   val = conn.execute("SELECT 'var' FROM variables WHERE varid=?" +
@@ -185,49 +239,26 @@ def printReference():
   return dispatch[val]()
 
 def printTree(jsonString):
-  print """Content-Type: text/html
+  print """Content-Type: application/json
 
-<script type="text/javascript">
-  dojo.addOnLoad(function() {
-    buildTree(%s, "tree-%s");
-  });
-</script>
-<div class="info">
-<div id="tree-%s" style="margin:0"></div>
-</div>
-""" % (jsonString, div, div)
+%s
+""" % (jsonString)
 
 
 form = cgi.FieldStorage()
 
-name = ''
 type = ''
-file = ''
-line = ''
 tree = ''
 virtroot = ''
-div = ''
-
-if form.has_key('name'):
-  name = form['name'].value
 
 if form.has_key('type'):
   type = form['type'].value
-
-if form.has_key('line'):
-  line = form['line'].value
-
-if form.has_key('file'):
-  file = form['file'].value
 
 if form.has_key('tree'):
   tree = form['tree'].value
 
 if form.has_key('virtroot'):
   virtroot = form['virtroot'].value
-
-if form.has_key('div'):
-  div = form['div'].value
 
 if form.has_key('rid'):
   refid = form['rid'].value

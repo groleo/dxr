@@ -3,15 +3,17 @@
 from multiprocessing import cpu_count
 from multiprocessing.pool import ThreadPool as Pool
 from itertools import chain
-import os
-import sys
-import getopt
-import subprocess
-import dxr.htmlbuilders
-import shutil
 import dxr
+import dxr.htmlbuilders
+import dxr.languages
+import getopt
+import os
+import shutil
 import sqlite3
 import string
+import subprocess
+import sys
+import time
 
 # At this point in time, we've already compiled the entire build, so it is time
 # to collect the data. This process can be viewed as a pipeline.
@@ -32,16 +34,6 @@ Options:
   -d, --debug   file                      Only generate HTML for the file."""
 
 big_blob = None
-
-def post_process(treeconfig):
-  global big_blob
-  big_blob = {}
-  srcdir = treeconfig.sourcedir
-  objdir = treeconfig.objdir
-  for plugin in dxr.get_active_plugins(treeconfig):
-    if 'post_process' in plugin.__all__:
-      big_blob[plugin.__name__] = plugin.post_process(srcdir, objdir)
-  return big_blob
 
 def WriteOpenSearch(name, hosturl, virtroot, wwwdir):
   try:
@@ -92,39 +84,135 @@ def make_index(file_list, dbdir):
   offset_index.close()
   file_index.close()
 
+def make_index_html(treecfg, dirname, fnames, htmlroot):
+  genroot = os.path.relpath(dirname, htmlroot)
+  if genroot.startswith('./'): genroot = genroot[2:]
+  if genroot.startswith('--GENERATED--'):
+    srcpath = treecfg.objdir
+    genroot = genroot[len("--GENERATED--") + 1:]
+  else:
+    srcpath = treecfg.sourcedir
+  srcpath = os.path.join(srcpath, genroot)
+  of = open(os.path.join(dirname, 'index.html'), 'w')
+  try:
+    of.write(treecfg.getTemplateFile("dxr-header.html"))
+    of.write('''<div id="maincontent" dojoType="dijit.layout.ContentPane"
+      region="center"><table id="index-list">
+        <tr><th></th><th>Name</th><th>Last modified</th><th>Size</th></tr>
+      ''')
+    of.write('<tr><td><img src="%s/images/icons/folder.png"></td>' %
+      treecfg.virtroot)
+    of.write('<td><a href="..">Parent directory</a></td>')
+    of.write('<td></td><td>-</td></tr>')
+    torm = []
+    fnames.sort()
+    dirs, files = [], []
+    for fname in fnames:
+      # Ignore hidden files
+      if fname[0] == '.':
+        torm.append(fname)
+        continue
+      fullname = os.path.join(dirname, fname)
+
+      # Directory ?
+      if os.path.isdir(fullname):
+        img = 'folder.png'
+        link = fname
+        display = fname + '/'
+        if fname == '--GENERATED--':
+          stat = os.stat(treecfg.objdir) # Meh, good enough
+        else:
+          stat = os.stat(os.path.join(srcpath, fname))
+        size = '-'
+        add = dirs
+      else:
+        img = 'page_white.png'
+        link = fname
+        display = fname[:-5] # Remove .html
+        stat = os.stat(os.path.join(srcpath, display))
+        size = stat.st_size
+        if size > 2 ** 30:
+          size = str(size / 2 ** 30) + 'G'
+        elif size > 2 ** 20:
+          size = str(size / 2 ** 20) + 'M'
+        elif size > 2 ** 10:
+          size = str(size / 2 ** 10) + 'K'
+        else:
+          size = str(size)
+        add = files
+      add.append('<tr><td><img src="%s/images/icons/%s"></td>' %
+        (treecfg.virtroot, img))
+      add.append('<td><a href="%s">%s</a></td>' % (link, display))
+      add.append('<td>%s</td><td>%s</td>' % (
+        time.strftime('%Y-%b-%d %H:%m', time.gmtime(stat.st_mtime)), size))
+      add.append('</tr>')
+    of.write(''.join(dirs))
+    of.write(''.join(files))
+    of.flush()
+    of.write(treecfg.getTemplateFile("dxr-footer.html"))
+
+    for f in torm:
+      fnames.remove(f)
+  except:
+    sys.excepthook(*sys.exc_info())
+  finally:
+    of.close()
+
 def builddb(treecfg, dbdir):
   """ Post-process the build and make the SQL directory """
+  global big_blob
+
+  # We use this all over the place, cache it here.
+  plugins = dxr.get_active_plugins(treecfg)
+
+  # Building the database--this happens as multiple phases. In the first phase,
+  # we basically collect all of the information and organizes it. In the second
+  # phase, we link the data across multiple languages.
   print "Post-processing the source files..."
-  big_blob = post_process(treecfg)
+  big_blob = {}
+  srcdir = treecfg.sourcedir
+  objdir = treecfg.objdir
+  for plugin in plugins:
+    if 'post_process' in plugin.__all__:
+      big_blob[plugin.__name__] = plugin.post_process(srcdir, objdir)
+
+  # Save off the raw data blob
   print "Storing data..."
   dxr.store_big_blob(treecfg, big_blob)
 
+  # Build the sql for later queries. This is a combination of the main language
+  # schema as well as plugin-specific information. The pragmas that are
+  # executed should make the sql stage go faster.
   print "Building SQL..."
-  all_statements = []
-  schemata = []
-  for plugin in dxr.get_active_plugins(treecfg):
-    schemata.append(plugin.get_schema())
-    if plugin.__name__ in big_blob:
-      all_statements.extend(plugin.sqlify(big_blob[plugin.__name__]))
-
-  if schemata == []:
-    print "No schemata"
-    return
-
   dbname = treecfg.tree + '.sqlite'
   conn = sqlite3.connect(os.path.join(dbdir, dbname))
+  conn.execute('PRAGMA synchronous=off')
+  conn.execute('PRAGMA page_size=65536')
+  # Safeguard against non-ASCII text. Let's just hope everyone uses UTF-8
+  conn.text_factory = str
+
+  # Import the schemata
+  schemata = [dxr.languages.get_standard_schema()]
+  for plugin in plugins:
+    schemata.append(plugin.get_schema())
   conn.executescript('\n'.join(schemata))
   conn.commit()
-  for stmt in all_statements:
-    try:
-      if isinstance(stmt, tuple):
-        conn.execute(stmt[0], stmt[1])
-      else:
-        conn.execute(stmt)
-    except sqlite3.InterfaceError:
-      print "%s##%s" %(stmt[0],stmt[1])
-      print "\n"
-      raise
+
+  # Load and run the SQL
+  def sql_generator():
+    for statement in dxr.languages.get_sql_statements():
+      yield statement
+    for plugin in plugins:
+      if plugin.__name__ in big_blob:
+        plugblob = big_blob[plugin.__name__]
+        for statement in plugin.sqlify(plugblob):
+          yield statement
+
+  for stmt in sql_generator():
+    if isinstance(stmt, tuple):
+      conn.execute(stmt[0], stmt[1])
+    else:
+      conn.execute(stmt)
   conn.commit()
   conn.close()
 
@@ -179,6 +267,10 @@ def indextree(treecfg, doxref, dohtml, debugfile):
   if dohtml:
     if not doxref:
       big_blob = dxr.load_big_blob(treecfg)
+    # Do we need to do file pivoting?
+    for plugin in dxr.get_active_plugins(treecfg):
+      if plugin.__name__ in big_blob:
+        plugin.pre_html_process(treecfg, big_blob[plugin.__name__])
     dxr.htmlbuilders.build_htmlifier_map(dxr.get_active_plugins(treecfg))
     treecfg.database = os.path.join(dbdir, dbname)
 
@@ -227,6 +319,13 @@ def indextree(treecfg, doxref, dohtml, debugfile):
     index_list.close()
     p.close()
     p.join()
+
+    # Generate index.html files
+    # XXX: This wants to be parallelized. However, I seem to run into problems
+    # if it isn't.
+    def genhtml(treecfg, dirname, fnames):
+      make_index_html(treecfg, dirname, fnames, htmlroot)
+    os.path.walk(htmlroot, genhtml, treecfg)
 
   # If the database is live, we need to switch the live to the new version
   if treecfg.isdblive:

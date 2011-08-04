@@ -1,6 +1,6 @@
 #!/usr/bin/env python2.6
 
-#import cgitb; cgitb.enable()
+import cgitb; cgitb.enable()
 import cgi
 import sqlite3
 import sys
@@ -82,14 +82,13 @@ def processString(string):
 
   # Print smart sidebar
   print '<div id="sidebar">'
-  config = {
-    'types': ['tname', 'tloc', 'tname'],
-    #'macros': ['mshortname', 'mloc', 'mshortname'], XXX: need to fix table
-    'variables': ['vname', 'vloc', 'vname'],
-    'functions': ['flongname', 'floc', 'fname'],
-  }
-  for table in config:
-    cols = config[table]
+  config = [
+    ('types', ['tname', 'tloc', 'tname']),
+    ('macros', ['macroname', 'macroloc', 'macroname']),
+    ('functions', ['fqualname', 'floc', 'fname']),
+    ('variables', ['vname', 'vloc', 'vname']),
+  ]
+  for table, cols in config:
     results = []
     for row in conn.execute('SELECT %s FROM %s WHERE %s %s;' % (
         ', '.join(cols[:-1]), table, cols[0], like_escape(string))).fetchall():
@@ -154,12 +153,17 @@ def processString(string):
   else:
     print '</ul>'
 
-def processType(type):
-  for type in conn.execute('select tname, tloc, tkind from types where tname like "' + type + '%";').fetchall():
-    tname = cgi.escape(type[0])
-    if not path or re.search(path, tloc):
-      print '<h3>%s (%s)</h3>' % (tname, type[2])
-      print GetLine(type[1])
+def processType(type, path=None):
+  for type in conn.execute('select * from types where tname like "' + type + '%";').fetchall():
+    tname = cgi.escape(type['tname'])
+    if not path or re.search(path, type['tloc']):
+      info = type['tkind']
+      if info == 'typedef':
+        typedef = conn.execute('SELECT ttypedef FROM typedefs WHERE tid=?',
+            (type['tid'],)).fetchone()[0]
+        info += ' ' + cgi.escape(typedef)
+      print '<h3>%s (%s)</h3>' % (tname, info)
+      print GetLine(type['tloc'])
 
 def processDerived(derived):
   components = derived.split('::')
@@ -195,7 +199,7 @@ def processDerived(derived):
         print GetLine(t[2])
   else:
     typeMaps = dict([(t[1], t[0]) for t in types])
-    for method in conn.execute('SELECT scopeid, flongname, floc FROM functions'+
+    for method in conn.execute('SELECT scopeid, fqualname, floc FROM functions'+
         ' WHERE scopeid IN (' + ','.join([str(t[1]) for t in types]) + ') AND' +
         ' fname = ?', (func,)).fetchall():
       tname = cgi.escape(typeMaps[method[0]])
@@ -205,80 +209,30 @@ def processDerived(derived):
         print GetLine(method[2])
 
 def processMacro(macro):
-    for m in conn.execute('select mname, mvalue from macros where mshortname like "' + macro + '%";').fetchall():
-        mname = cgi.escape(m[0])
-        mvalue = cgi.escape(m[1])
-        print '<h3>%s</h3><pre>%s</pre>' % (mname, mvalue)
+  for m in conn.execute('SELECT * FROM macros WHERE macroname LIKE "' +
+      macro + '%";').fetchall():
+    mname = m['macroname']
+    if m['macroargs']:
+      mname += m['macroargs']
+    mtext = m['macrotext'] and m['macrotext'] or ''
+    print '<h3>%s</h3><pre>%s</pre>' % (cgi.escape(mname), cgi.escape(mtext))
+    print GetLine(m['macroloc'])
 
-def processMember(member, type, printDecl):
-    members = None
-    count = 0 # make sure we find something
-    if type:
-        members = conn.execute('select mname, mtname, mtloc, mdecl, mdef, mvalue, maccess from members where mshortname like "' + member +
-                               '%" and mtname like "' + type + '%" order by mtname, maccess, mname;').fetchall()
-    else:
-        members = conn.execute('select mname, mtname, mtloc, mdecl, mdef, mvalue, maccess from members where mshortname like "' + member +
-                               '%" order by mtname, maccess, mname;').fetchall()
-    # TODO: is there a way to add more of the above data here?
-    for m in members:
-        if m[5]: # does this member have a value?
-            print '<h3>%s::%s [Value = %s]</h3>' % (cgi.escape(m[1]), cgi.escape(m[0]), cgi.escape(m[5]))
-        else:
-            print '<h3>%s::%s</h3>' % (cgi.escape(m[1]), cgi.escape(m[0]))
+def processFunction(func):
+  for f in conn.execute('SELECT * FROM functions WHERE fqualname LIKE "%' +
+      func + '%";').fetchall():
+    print '<h3>%s</h3>' % cgi.escape(f['fqualname'])
+    print GetLine(f['floc'])
 
-        if printDecl and m[3]:
-            print GetLine(m[3])
-            count += 1
-        if m[4]:
-            print GetLine(m[4])
-            count += 1
-    return count
+def processVariable(var):
+  for v in conn.execute('SELECT * FROM variables WHERE vname LIKE "%' +
+      var + '%";').fetchall():
+    qual = v['modifiers'] and v['modifiers'] or ''
+    print '<h3>%s %s %s</h3>' % (cgi.escape(qual), cgi.escape(v['vtype']),
+      cgi.escape(v['vname']))
+    print GetLine(v['vloc'])
 
-def processCallees(callees):
-    n, t, m = split_type(callees)
-    hist = conn.execute("select flongname from functions where funcid in (select callee from calls where caller in (select funcid from functions where fname=(?) COLLATE NOCASE));", [t]).fetchall() ;
-
-def processCallers(callers):
-    n, t, m = split_type(callers)
-
-    if not t and not m:
-        return
-
-    if n:
-        # type names will include namespace
-        t = n + '::' + t
-
-    #hits = conn.execute("select namespace, type, shortName from node where id in (select caller from edge where callee in (select id from node where type=? COLLATE NOCASE and shortName=? COLLATE NOCASE));", (t, m)).fetchall();
-    hits = conn.execute("SELECT flongname FROM functions WHERE funcid IN (SELECT caller FROM calls WHERE callee IN (SELECT funcid FROM functions WHERE fname=(?) COLLATE NOCASE));",[t]) .fetchall() ;
-    print hits
-    count = 0
-    for h in hits:
-        count += 1
-        print h
-        if h[0]:
-            processMember(h[2], h[0] + '::' + h[1], False)
-        else:
-            processMember(h[2], h[1], False)
-
-#    # No hits on direct type, try bases
-#    if count == 0:
-#        hits = conn.execute("select type, shortName from node where id in (select caller from edge where callee in (select id from node where shortName=? and type in (select tbname from impl where tcname=?)));", (parts[1], parts[0])).fetchall();
-#        for h in hits:
-#            count += 1
-#            processMember(h[1], h[0], False)
-
-    if count == 0:
-        print "No matches found.  Perhaps you want a base type?"
-
-        # Show base types with this member
-        for type in conn.execute('SELECT tbname, tcloc, direct FROM impl WHERE tcname = ? ORDER BY direct DESC COLLATE NOCASE;', (t,)).fetchall():
-            tname = cgi.escape(type[0])
-            tdirect = 'Direct' if type[2] == 1 else 'Indirect'
-            if not path or re.search(path, tloc):
-                print '<h3>%s (%s)</h3>' % (tname, tdirect)
-                print GetLine(type[1])
-
-def processWarnings(warnings):
+def processWarnings(warnings, path=None):
   # Check for * which means user entered "warnings:" and wants to see all of them.
   if warnings == '*':
     warnings = ''
@@ -288,6 +242,39 @@ def processWarnings(warnings):
     if not path or re.search(path, w[0]):
       print '<h3>%s</h3>' % w[1]
       print GetLine(w[0])
+
+def processCallers(caller, path=None, funcid=None):
+  # I could handle this with a single call, but that gets a bit complicated.
+  # Instead, let's first find the function that we're trying to find.
+  cur = conn.cursor()
+  if funcid is None:
+    cur.execute('SELECT * FROM functions WHERE fqualname %s' %
+      like_escape(caller))
+    funcinfos = cur.fetchall()
+    if len(funcinfos) == 0:
+      print '<h2>No results found</h2>'
+      return
+    elif len(funcinfos) > 1:
+      print '<h3>Ambiguous function:</h3><ul>'
+      for funcinfo in funcinfos:
+        print ('<li><a href="search.cgi?callers=%s&funcid=%d&tree=%s">%s</a>' +
+          ' at %s</li>') % (caller, funcinfo['funcid'], tree,
+          funcinfo['fqualname'], funcinfo['floc'])
+      print '</ul>'
+      return
+    funcid = funcinfos[0]['funcid']
+  # We have two cases: direct calls or we're in targets
+  cur = conn.cursor()
+  for info in cur.execute("SELECT functions.* FROM functions " +
+      "LEFT JOIN callers ON (callers.callerid = funcid) WHERE targetid=? " +
+      "UNION SELECT functions.* FROM functions LEFT JOIN callers " +
+      "ON (callers.callerid = functions.funcid) LEFT JOIN targets USING " +
+      "(targetid) WHERE targets.funcid=?", (funcid, funcid)):
+    if not path or re.search(path, info['floc']):
+      print '<h3>%s</h3>' % info['fqualname']
+      print GetLine(info['floc'])
+  if cur.rowcount == 0:
+    print '<h3>No results found</h3>'
 
 # XXX: enable auto-flush on write - http://mail.python.org/pipermail/python-list/2008-June/668523.html
 # reopen stdout file descriptor with write mode
@@ -381,8 +368,26 @@ else:
 print 'Content-Type: text/html\n'
 print dxrconfig.getTemplateFile("dxr-search-header.html") % cgi.escape(titlestr)
 
-if string:
-    processString(string)
+# XXX... plugins!
+searches = [
+  ('type', processType, False, 'Types %s', ['path']),
+  ('function', processFunction, False, 'Functions %s', []),
+  ('variable', processVariable, False, 'Functions %s', []),
+  ('derived', processDerived, False, 'Derived from %s', ['path']),
+  ('macro', processMacro, False, 'Macros %s', []),
+  ('warnings', processWarnings, False, 'Warnings %s', ['path']),
+  ('callers', processCallers, False, 'Callers of %s', ['path', 'funcid']),
+  ('string', processString, True, '%s', ['path', 'ext'])
+]
+for param, dispatch, hasSidebar, titlestr, optargs in searches:
+  if param in form:
+    titlestr = cgi.escape(titlestr % form[param])
+    print dxrconfig.getTemplateFile("dxr-search-header.html") % titlestr
+    if not hasSidebar:
+      print '<div id="content">'
+    kwargs = dict((k,form[k]) for k in optargs if k in form)
+    dispatch(form[param], **kwargs)
+    break
 else:
     print '<div id="content">'
     if type:

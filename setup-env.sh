@@ -1,8 +1,13 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 if [ -z "$1" ]; then
-  echo "Usage: . ${BASH_SOURCE[0]} <srcdir>"
-  return &> /dev/null || exit 0
+  name="${BASH_SOURCE[0]}"
+  if [ -z "$name" ]; then
+      name=$0
+  fi
+  echo "Usage: . $name <srcdir> [<datadir>]"
+  return 0 &>/dev/null
+  exit 1
 fi
 SRCDIR="$1"
 
@@ -24,6 +29,8 @@ if [ -z "$DXRSRC" ]; then
 else
   echo "Using DXRSRC:$DXRSRC"
 fi
+
+MAKE=${MAKE:-make}
 
 echo "Finding available DXR plugins..."
 tools=( $(PYTHONPATH=$DXRSRC:$PYTHONPATH python - <<HEREDOC
@@ -51,17 +58,21 @@ fi
 
 for plugin in $(seq 0 $((${#tools[@]} - 1))); do
   echo -n "Prebuilding $(basename ${tools[plugin]})... "
-  make -s -C ${tools[plugin]} prebuild
-  if [[ $? != 0 ]]; then
-    echo "Bailing!"
-    return 1
+  if [ -e ${tools[plugin]}/Makefile ]; then 
+    $MAKE -s -C ${tools[plugin]} prebuild
+    if [[ $? != 0 ]]; then
+      echo "Bailing!"
+      return 1
+    fi
   fi
   echo "done!"
 done
 
 echo -n "Preparing environment... "
 for plugin in $(seq 0 $((${#tools[@]} - 1))); do
-  . "${tools[plugin]}/set-env.sh"
+  if [ -e "${tools[plugin]}/set-env.sh" ]; then
+    . "${tools[plugin]}/set-env.sh"
+  fi
 done
 echo "done!"
 

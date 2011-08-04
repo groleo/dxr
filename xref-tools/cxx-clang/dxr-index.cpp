@@ -111,7 +111,8 @@ private:
   }
 public:
   IndexConsumer(CompilerInstance &ci) :
-      sm(ci.getSourceManager()), features(ci.getLangOpts()) {
+      sm(ci.getSourceManager()), features(ci.getLangOpts()),
+      m_currentFunction(NULL) {
     inner = ci.getDiagnostics().takeClient();
     ci.getDiagnostics().setClient(this, false);
     ci.getPreprocessor().addPPCallbacks(new PreprocThunk(this));
@@ -169,8 +170,9 @@ public:
   void printExtent(SourceLocation begin, SourceLocation end) {
     if (begin.isMacroID() || end.isMacroID())
       return;
-    *out << ",extent," << sm.getFileOffset(begin) << ":" <<
-      sm.getFileOffset(Lexer::getLocForEndOfToken(end, 0, sm, features));
+    *out << ",extent," << sm.getDecomposedSpellingLoc(begin).second << ":" <<
+      sm.getDecomposedSpellingLoc(
+        Lexer::getLocForEndOfToken(end, 0, sm, features)).second;
   }
 
   void printScope(Decl *d) {
@@ -179,9 +181,18 @@ public:
     // organization
     while (NamespaceDecl::classof(ctxt))
       ctxt = Decl::castFromDeclContext(ctxt->getNonClosureContext());
+    // If the scope is an anonymous struct/class/enum/union, replace it with the
+    // typedef name here as well.
     if (NamedDecl::classof(ctxt)) {
       NamedDecl *scope = static_cast<NamedDecl*>(ctxt);
-      recordValue("scopename", scope->getQualifiedNameAsString());
+      NamedDecl *namesource = scope;
+      if (TagDecl::classof(scope)) {
+        TagDecl *tag = static_cast<TagDecl*>(scope);
+        NamedDecl *redecl = tag->getTypedefNameForAnonDecl();
+        if (redecl)
+          namesource = redecl;
+      }
+      recordValue("scopename", namesource->getQualifiedNameAsString());
       recordValue("scopeloc", locationToString(scope->getLocation()));
     }
   }
@@ -235,12 +246,17 @@ public:
       return true;
     // Information we need for types: kind, fqname, simple name, location
     beginRecord("type", d->getLocation());
-    recordValue("tname", d->getNameAsString());
-    recordValue("tqualname", d->getQualifiedNameAsString());
+    // We get the name from the typedef if it's an anonymous declaration...
+    NamedDecl *nd = d->getTypedefNameForAnonDecl();
+    if (!nd)
+      nd = d;
+    recordValue("tname", nd->getNameAsString());
+    recordValue("tqualname", nd->getQualifiedNameAsString());
     recordValue("tloc", locationToString(d->getLocation()));
     recordValue("tkind", d->getKindName());
     printScope(d);
-    printExtent(d->getLocation(), d->getLocation());
+    // Linkify the name, not the `enum'
+    printExtent(nd->getLocation(), nd->getLocation());
     *out << std::endl;
 
     declDef(d, d->getDefinition());
@@ -283,10 +299,30 @@ public:
       return true;
     beginRecord("function", d->getLocation());
     recordValue("fname", d->getNameAsString());
-    recordValue("flongname", d->getQualifiedNameAsString());
+    recordValue("fqualname", d->getQualifiedNameAsString());
+    recordValue("ftype", d->getResultType().getAsString());
+    std::string args("(");
+    for (FunctionDecl::param_iterator it = d->param_begin();
+        it != d->param_end(); it++) {
+      args += ", ";
+      args += (*it)->getType().getAsString();
+    }
+    if (d->getNumParams() > 0)
+      args.erase(1, 2);
+    args += ")";
+    recordValue("fargs", args);
     recordValue("floc", locationToString(d->getLocation()));
     printScope(d);
     printExtent(d->getNameInfo().getBeginLoc(), d->getNameInfo().getEndLoc());
+    // Print out overrides
+    if (CXXMethodDecl::classof(d)) {
+      CXXMethodDecl *cxxd = dyn_cast<CXXMethodDecl>(d);
+      CXXMethodDecl::method_iterator iter = cxxd->begin_overridden_methods();
+      if (iter) {
+        recordValue("overridename", (*iter)->getQualifiedNameAsString());
+        recordValue("overrideloc", locationToString((*iter)->getLocation()));
+      }
+    }
     *out << std::endl;
     const FunctionDecl *def;
     if (d->isDefined(def))
@@ -306,18 +342,29 @@ public:
     *out << std::endl;
   }
 
-  bool VisitEnumConstandDecl(EnumConstantDecl *d) { visitVariableDecl(d); return true; }
+  bool VisitEnumConstantDecl(EnumConstantDecl *d) { visitVariableDecl(d); return true; }
   bool VisitFieldDecl(FieldDecl *d) { visitVariableDecl(d); return true; }
   bool VisitVarDecl(VarDecl *d) { visitVariableDecl(d); return true; }
 
   bool VisitTypedefNameDecl(TypedefNameDecl *d) {
     if (!interestingLocation(d->getLocation()))
       return true;
+    // If the underlying declaration is anonymous, the "real" name is already
+    // this typedef, so don't record ourselves as a typedef.
+    // XXX: this seems broken?
+#if 0
+    const Type *real = d->getUnderlyingType().getTypePtr();
+    if (TagType::classof(real)) {
+      if (static_cast<const TagType*>(real)->getDecl()->
+          getTypedefNameForAnonDecl() == d)
+        return true;
+    }
+#endif
     beginRecord("typedef", d->getLocation());
     recordValue("tname", d->getNameAsString());
     recordValue("tqualname", d->getQualifiedNameAsString());
     recordValue("tloc", locationToString(d->getLocation()));
-    // XXX: print*out the referent
+    recordValue("ttypedef", d->getUnderlyingType().getAsString());
     printScope(d);
     printExtent(d->getLocation(), d->getLocation());
     *out << std::endl;
@@ -330,7 +377,8 @@ public:
     if (!TagDecl::classof(d) && !NamespaceDecl::classof(d) &&
         !FunctionDecl::classof(d) && !FieldDecl::classof(d) &&
         !VarDecl::classof(d) && !TypedefNameDecl::classof(d) &&
-        !EnumConstantDecl::classof(d) && !AccessSpecDecl::classof(d))
+        !EnumConstantDecl::classof(d) && !AccessSpecDecl::classof(d) &&
+        !LinkageSpecDecl::classof(d))
       printf("Unprocessed kind %s\n", d->getDeclKindName());
     return true;
   }
@@ -359,6 +407,60 @@ public:
   bool VisitDeclRefExpr(DeclRefExpr *e) {
     printReference(e->getDecl(), e->hasQualifier() ?
       e->getQualifierLoc().getBeginLoc() : e->getLocation(), e->getNameInfo().getEndLoc());
+    return true;
+  }
+
+  bool VisitCallExpr(CallExpr *e) {
+    if (!interestingLocation(e->getLocStart()))
+      return true;
+
+    Decl *callee = e->getCalleeDecl();
+    if (!callee || !interestingLocation(callee->getLocation()) ||
+        !NamedDecl::classof(callee))
+      return true;
+
+    // Fun facts about call exprs:
+    // 1. callee isn't necessarily a function. Think function pointers.
+    // 2. We might not be in a function. Think global function decls
+    // 3. Virtual functions need not be called virtually!
+    beginRecord("call", e->getLocStart());
+    if (m_currentFunction) {
+      recordValue("callername", m_currentFunction->getQualifiedNameAsString());
+      recordValue("callerloc", locationToString(m_currentFunction->getLocation()));
+    }
+    recordValue("calleename", dyn_cast<NamedDecl>(callee)->getQualifiedNameAsString());
+    recordValue("calleeloc", locationToString(callee->getLocation()));
+    // Determine the type of call
+    const char *type = "static";
+    if (CXXMethodDecl::classof(callee)) {
+      CXXMethodDecl *cxxcallee = dyn_cast<CXXMethodDecl>(callee);
+      if (cxxcallee->isVirtual()) {
+        // If it's a virtual function, we need the MemberExpr to be unqualified
+        if (!MemberExpr::classof(e->getCallee()) ||
+            !dyn_cast<MemberExpr>(e->getCallee())->hasQualifier())
+          type = "virtual";
+      }
+    } else if (!FunctionDecl::classof(callee)) {
+      // Assume not a function -> function pointer of some type.
+      type = "funcptr";
+    }
+    recordValue("calltype", type);
+    *out << std::endl;
+    return true;
+  }
+
+  // For binding stuff inside the directory, we need to find the containing
+  // function. Unfortunately, there is no way to do this in clang, so we have
+  // to maintain the function stack ourselves. Why is it a stack? Consider:
+  // void foo() { class A { A() { } }; } <-- nested function
+  FunctionDecl *m_currentFunction;
+  bool TraverseDecl(Decl *d) {
+    FunctionDecl *parent = m_currentFunction;
+    if (d && FunctionDecl::classof(d)) {
+      m_currentFunction = dyn_cast<FunctionDecl>(d);
+    }
+    RecursiveASTVisitor<IndexConsumer>::TraverseDecl(d);
+    m_currentFunction = parent;
     return true;
   }
 
@@ -403,22 +505,24 @@ public:
     const char *contents = sm.getCharacterData(nameStart);
     unsigned int nameLen = MacroNameTok.getIdentifierInfo()->getLength();
     unsigned int argsStart = 0, argsEnd = 0, defnStart;
-    bool inArgs = false;
-    for (defnStart = nameLen; defnStart < length; defnStart++) {
+    
+    // Grab the macro arguments if it has some
+    if (nameLen < length && contents[nameLen] == '(') {
+      argsStart = nameLen;
+      for (argsEnd = nameLen + 1; argsEnd < length; argsEnd++)
+        if (contents[argsEnd] == ')') {
+          argsEnd++;
+          break;
+        }
+      defnStart = argsEnd;
+    } else {
+      defnStart = nameLen;
+    }
+    // Find the first non-whitespace character for the definition.
+    for (; defnStart < length; defnStart++) {
       switch (contents[defnStart]) {
         case ' ': case '\t': case '\v': case '\r': case '\n': case '\f':
           continue;
-        case '(':
-          inArgs = true;
-          argsStart = defnStart;
-          continue;
-        case ')':
-          inArgs = false;
-          argsEnd = defnStart + 1;
-          continue;
-        default:
-          if (inArgs)
-            continue;
       }
       break;
     }

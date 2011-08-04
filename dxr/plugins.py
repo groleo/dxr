@@ -1,3 +1,4 @@
+import dxr.languages
 import os
 
 def in_path(exe):
@@ -25,6 +26,10 @@ def default_sqlify(blob):
 
 def default_can_use(treecfg):
   """ Returns True if this plugin can be used for the given tree."""
+  return True
+
+def default_pre_html_process(treecfg, blob):
+  """ Called immediately before htmlifiers are first run. """
   return True
 
 def default_get_htmlifiers():
@@ -69,8 +74,6 @@ def default_get_htmlifiers():
       In addition, any htmlifier that contains the key 'no-override' will be
       run in addition to the first htmlifier found.
       """
-  def noop(blob, srcpath, treecfg):
-    return []
   return {}
 
 class Schema:
@@ -106,6 +109,10 @@ class Schema:
         for sql in sqliter:
           yield sql
 
+  def get_empty_blob(self):
+    """ Returns an empty blob for this schema, using dicts for the table. """
+    return dict((name, {}) for name in self.tables)
+
 
 class SchemaTable:
   """ A table schema dictionary has column names as keys and information tuples
@@ -132,6 +139,7 @@ class SchemaTable:
     self.name = tblname
     self.key = None
     self.columns = []
+    self.needLang = False
     defaults = ['VARCHAR(256)', True]
     for col in tblschema:
       if isinstance(tblschema, tuple) or isinstance(tblschema, list):
@@ -154,7 +162,8 @@ class SchemaTable:
     sql += 'CREATE TABLE %s (\n  ' % (self.name)
     colstrs = []
     special_types = {
-      '_location': 'VARCHAR(256)'
+      '_location': 'VARCHAR(256)',
+      '_language': 'VARCHAR(32)'
     }
     for col, spec in self.columns:
       specsql = col + ' '
@@ -181,7 +190,6 @@ class SchemaTable:
       yield ('INSERT OR IGNORE INTO %s (%s) VALUES (%s);' % (self.name,
         ','.join(keys), ','.join('?' for k in keys)), args)
 
-
 def make_get_schema_func(schema):
   """ Returns a function that satisfies get_schema's contract from the given
       schema object. """
@@ -192,4 +200,51 @@ def make_get_schema_func(schema):
 
 def required_exports():
   """ Returns the required exports for a module, for use as __all__. """
-  return ['post_process', 'sqlify', 'can_use', 'get_htmlifiers', 'get_schema']
+  return ['post_process', 'sqlify', 'can_use', 'get_htmlifiers', 'get_schema',
+    'pre_html_process']
+
+last_id = 0
+def next_global_id():
+  """ Returns a unique identifier that is unique compared to other IDs. """
+  global last_id
+  last_id += 1
+  return last_id
+
+language_by_file = None
+
+def break_into_files(blob, tablelocs):
+  global language_by_file
+
+  # The following method builds up the file table
+  def add_to_files(inblob, cols):
+    filetable = {}
+    for tblname, lockey in cols.iteritems():
+      intable = inblob[tblname]
+      tbliter = isinstance(intable, dict) and intable.itervalues() or intable
+      for row in tbliter:
+        fname = row[lockey].split(":")[0]
+        try:
+          tbl = filetable[fname]
+        except KeyError:
+          tbl = filetable[fname] = dict((col, []) for col in cols)
+        tbl[tblname].append(row)
+    return filetable
+
+  # Build the map for total stuff
+  standard_keys = {
+    'scopes': 'sloc',
+    'functions': 'floc',
+    'variables': 'vloc',
+    'types': 'tloc'
+  }
+  if language_by_file is None:
+    language_by_file = add_to_files(dxr.languages.language_data, standard_keys)
+
+  # Build our map for a specific plugin
+  perfile = add_to_files(blob, tablelocs)
+  for fname, table in perfile.iteritems():
+    if fname in language_by_file:
+      table.update(language_by_file[fname])
+    else:
+      table.update((key, []) for key in standard_keys)
+  return perfile
