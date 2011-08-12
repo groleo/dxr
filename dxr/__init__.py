@@ -49,7 +49,7 @@ def load_plugins(dxrsrc=None):
     except:
       print "Unable to load plugin %s" % dirname
       print sys.exc_info()
-      pass
+      raise
   return all_plugins
 
 def store_big_blob(tree, blob):
@@ -101,11 +101,6 @@ class DxrConfig(object):
     else:
       self.dxrroot = None
 
-    if config.has_option('plugins','disable'):
-      self.disabled_plugins = config.get('plugins', 'disable').split(' ')
-    else:
-      self.disabled_plugins = []
-
     self.wwwdir = os.path.abspath(config.get('Web', 'wwwdir'))
     self.virtroot=config.get('Web','virtroot')
     if self.virtroot != '' and not self.virtroot.endswith('/'):
@@ -118,8 +113,7 @@ class DxrConfig(object):
       self.trees = []
       for section in config.sections():
         if section == 'DXR' \
-        or section == 'Web' \
-        or section == 'plugins':
+        or section == 'Web' :
           continue
         self.trees.append(DxrConfig(config, section))
     else:
@@ -174,9 +168,9 @@ def readFile(filename):
     return None
 
 def load_config(path):
-  if not os.path.exists(path):
-    print('Error reading %s: No such file or directory' % path)
-    raise IOError('Error reading %s: No such file or directory' % path)
+  if not os.path.isfile(path):
+    print('Error reading %s: Not a config file' % path)
+    raise IOError('Error reading %s: Not a config file' % path)
     return None
   config = ConfigParser()
   config.read(path)
