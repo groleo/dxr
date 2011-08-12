@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bash -e
 
 if [ -z "$2" ]; then
   name="${BASH_SOURCE[0]}"
@@ -16,7 +16,11 @@ function get_var()
 {
 echo $(PYTHONPATH=$DXRSRC:$PYTHONPATH python - <<HEREDOC
 import dxr
-dxrconfig=dxr.load_config("$DXRCONFIG")
+import sys
+try:
+	dxrconfig=dxr.load_config("$DXRCONFIG")
+except:
+	sys.exit(1)
 found=False
 for treecfg in dxrconfig.trees:
 	if treecfg.tree != "$1":
@@ -26,12 +30,14 @@ for treecfg in dxrconfig.trees:
 		break
 
 if found == False:
-	raise BaseException("Tree[$1] not found in config[$DXRCONFIG]")
+	print >>sys.stderr, "Error : Tree[$1] not found in config[$DXRCONFIG]"
+	sys.exit(1)
 else:
 	try:
 		print("%s"% treecfg.$2)
 	except:
-		raise BaseException("Variable[$2] not found in Tree[$1]")
+		print >>sys.stderr, "Variable[$2] not found in Tree[$1]"
+		sys.exit(1)
 HEREDOC
 )
 }
@@ -53,7 +59,7 @@ else
 fi
 
 OBJDIR=$(get_var "$TREENAME" "objdir")
-
+[ "$OBJDIR" = "" ] && exit 1
 MAKE=${MAKE:-make}
 
 echo "Finding available DXR plugins..."
