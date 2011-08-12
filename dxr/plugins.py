@@ -5,7 +5,7 @@ def in_path(exe):
   """ Returns true if the executable can be found in the given path.
       Equivalent to which, except that it doesn't check executability. """
   path = os.environ['PATH'].split(':')
-  return any([os.path.exists(os.path.join(p, exe)) for p in path])
+  return any([os.path.isfile(os.path.join(p, exe)) for p in path])
 
 def default_post_process(srcdir, objdir):
   """ Collect data from processing files in the source and build directories.

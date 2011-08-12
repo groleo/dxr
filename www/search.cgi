@@ -9,7 +9,7 @@ import ConfigParser
 import re
 
 # Get the DXR installation point from dxr.config
-if not os.path.exists('dxr.config'):
+if not os.path.isfile('dxr.config'):
   print('Error reading %s: No such file or directory: dxr.config'  )
   raise IOError('Error reading %s: No such file or directory: dxr.config')
 
@@ -294,7 +294,7 @@ else:
 # Load the database
 dbname = tree + '.sqlite'
 dxrdb = os.path.join(treecfg.dbdir, dbname)
-if not os.path.exists(dxrdb):
+if not os.path.isfile(dxrdb):
   raise BaseException("No such file %s" % dxrdb )
 
 conn = sqlite3.connect(dxrdb)
