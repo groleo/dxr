@@ -57,6 +57,7 @@ function methodSignaturesMatch(m1, m2)
 
 function ignorableFile(f)
 {
+    //|| /^[^\/]+\.cpp$/.exec(type.loc.file))
     return false;
 }
 
@@ -287,10 +288,10 @@ function insertCall(edge)
     //['SELECT id FROM node WHERE name = "' + serializeFullMethod(edge.caller) + '" AND loc = "' + edge.caller.loc,
     // 'SELECT id FROM node WHERE name = "' + serializeFullMethod(edge.callee) + '" AND loc = "' + edge.callee.loc ]);
     csv.insert('call',
-        {'callerName': edge.caller.fullName, //serializeFullMethod(edge.caller),
-        'callerLoc': edge.caller.loc,
-        'calleeName': edge.callee.fullName, //serializeFullMethod(edge.callee),
-        'calleeLoc': edge.callee.loc
+        {'callername': edge.caller.fullName, //serializeFullMethod(edge.caller),
+        'callerloc': edge.caller.loc,
+        'calleename': edge.callee.fullName, //serializeFullMethod(edge.callee),
+        'calleeloc': edge.callee.loc
         });
 }
 
@@ -512,189 +513,201 @@ function resolveFunctionDecl(expr)
 //////////////////////////////////////////////////////////////////////////////
 // Hydra specific
 //////////////////////////////////////////////////////////////////////////////
-function process_decl(d)
+
+/*
+ * process_decl is called for every
+ *  global variable, function, or template declaration.
+ *
+ * @param decl  A variable type
+ */
+function process_decl(decl)
 {
-    if (ignorableFile(d.loc.file)) return;
-    if (!d.isFunction) return;
+    if (ignorableFile(decl.loc.file)) return;
+    if ( ! decl.isFunction ) return;
 
     // Skip things we don't care about
-    if ((/:?:?operator.*$/.exec(d.name)) /* overloaded operators */ || (/^D_[0-9]+$/.exec(d.name)) /* gcc temporaries */ || (/^_ZTV.*$/.exec(d.name)) /* vtable vars */ || (/.*COMTypeInfo.*/.exec(d.name)) /* ignore COMTypeInfo<int> */ || ('this' == d.name) || (/^__built_in.*$/.exec(d.name))) /* gcc built-ins */
-    return;
-
-    // Treat the decl of a func like one of the statements in the func so we can link params
-    var vfuncname = d.name;
-    var vfuncloc = locationToString(d);
+    if ((/:?:?operator.*$/.exec(decl.name)) /* overloaded operators */
+    || (/^D_[0-9]+$/.exec(decl.name))       /* gcc temporaries */
+    || (/^_ZTV.*$/.exec(decl.name))         /* vtable vars */
+    || (/.*COMTypeInfo.*/.exec(decl.name))  /* ignore COMTypeInfo<int> */
+    || ('this' == decl.name)                /* this */
+    || (/^__built_in.*$/.exec(decl.name)))  /* gcc built-ins */
+        return;
 
     // Treat the actual func decl as a statement so we can easily linkify it
     var vtype = '';
-    var vname = d.name;
+    var vname = decl.name;
 
+    // member function
     if (/::/.exec(vname))
     {
-        var parts = parseName(d);
+        var parts = parseName(decl);
         vtype = parts.tname || vtype;
         vname = parts.name || vname;
     }
 
-    var vshortname = vname.replace(/\(.*$/, '');
-    var vlocf = d.loc.file;
-    var vlocl = d.loc.line;
-    var vlocc = d.loc.column;
-    var vtloc = '';
-
-    vtloc = locationToString(d);
-
-    csv.insert("function",
+    /*csv.insert("function1",
         {
-        'fname':vshortname,
-        'flongname':vfuncname,
-        'floc':vfuncloc,
-        /*
-        'scopename':'scope1',
-        'scopeloc':'f:1:2'
-        */
+        'fname': decl.shortName,
+        'flongname': decl.name,
+        'floc': locationToString(decl),
+        //'scopename':'scope1',
+        //'scopeloc':'f:1:2'
         });
-    if (!d.parameters) return;
+    */
+    //processFunctionArguments(decl);
 
-    // Keep track of all params in the function
-    for (var i = 0; i < d.parameters.length; i++)
+    function processFunctionArguments(decl)
     {
-        vname = d.parameters[i].name;
+        if (!decl.parameters) return;
 
-        // we'll skip |this| and treat it as a keyword instead
-        if ('this' == vname) continue;
-
-        vshortname = vname.replace(/\(.*$/, ''); // XXX: will vname not always be the same in this case?
-        vlocf = d.loc.file;
-        vlocl = d.loc.line;
-        d.loc.column++ // col is never accurate, but indicates "further"
-        vlocc = d.loc.column;
-        vtype = '';
-        vtloc = '';
-        if (d.parameters[i].type)
+        // Keep track of all params in the function
+        for (var i = 0; i < decl.parameters.length; i++)
         {
-            vtype = d.parameters[i].type.name;
-            vtloc = d.parameters[i].type.loc ? locationToString(d.parameters[i].type) : '';
+            vname = decl.parameters[i].name;
+
+            // we'll skip |this| and treat it as a keyword instead
+            if ('this' == vname) continue;
+
+            vshortname = vname.replace(/\(.*$/, ''); // XXX: will vname not always be the same in this case?
+            vlocf = decl.loc.file;
+            vlocl = decl.loc.line;
+            decl.loc.column++ // col is never accurate, but indicates "further"
+            vlocc = decl.loc.column;
+            vtype = '';
+            vtloc = '';
+            if (decl.parameters[i].type)
+            {
+                vtype = decl.parameters[i].type.name;
+                vtloc = decl.parameters[i].type.loc ? locationToString(decl.parameters[i].type) : '';
+            }
+    /*
+            csv.insert("function",
+                    {
+                    'fname': vshortname,
+                    'flongname': vfuncname,
+                    'floc': vfuncloc,
+                    'vshortname': vshortname,
+                    'vlocf': vlocf,
+                    'vlocl': vlocl,
+                    'vlocc': vlocc,
+                    'vtype': vtype,
+                    'vtloc': vtloc,
+                    'visFcall': -1,
+                    'visDecl': 1
+                    });
+    */
         }
-/*
-        csv.insert("function",
-                {
-                'fname': vshortname,
-                'flongname': vfuncname,
-                'floc': vfuncloc,
-                'vshortname': vshortname,
-                'vlocf': vlocf,
-                'vlocl': vlocl,
-                'vlocc': vlocc,
-                'vtype': vtype,
-                'vtloc': vtloc,
-                'visFcall': -1,
-                'visDecl': 1
-                });
-	*/
-    }
+    }// processFunArguments
 }
 
 
-//////////////////////////////////////////////////////////////////////////////
-// DECLs
-//////////////////////////////////////////////////////////////////////////////
 /*
+ * Dehydra calls this for each
+ *  class, struct, enum, union, and typedef declaration.
+ *
+ * process_type is called after process_function is called
+ * for all the member functions.
+ * @param type  A type object representing the type that
+ *              was declared.
+ *
  * process_type() (actually, printMembers() called via process_type)
  * - gives a member's declaration (mdecl) IF loc is normalized
  */
-
-function process_type(c)
+function process_type(type)
 {
-    if (ignorableFile(c.loc.file) || /^[^\/]+\.cpp$/.exec(c.loc.file)) return;
+    if ( ignorableFile(type.loc.file) ) return ;
+    
+        return;
 
     //XXX - what to do about other types?
-    if (c.typedef) return processTypedef(c);
-    if (c.kind == 'enum') return processEnum(c);
-    if (c.kind == 'class' || c.kind=='struct') return processClassOrStruct(c);
+    if (type.typedef) return processTypedef(type);
+    if (type.kind == 'enum') return processEnum(type);
+    if (type.kind == 'class' || type.kind=='struct') return processClassOrStruct(type);
 
-    function processTypedef(c)
+    function processTypedef(type)
     {
         // Normalize path and throw away column info -- we just care about file + line for types.
-        var tloc = locationToString(c);
-        var ttypedefname = ensureString(c.typedef.name);
+        var tloc = locationToString(type);
+        var ttypedefname = ensureString(type.typedef.name);
         var ttypedefloc = '';
-        if (c.typedef.loc)
+        if (type.typedef.loc)
         {
-            var vloc = c.typedef.loc;
-            ttypedefloc = locationToString(c.typedef);
+            var vloc = type.typedef.loc;
+            ttypedefloc = locationToString(type.typedef);
         }
 
         var ttemplate = '';
-        if (c.template) ttemplate = c.template.name;
+        if (type.template) ttemplate = type.template.name;
 
         var tignore = 0;
 
         csv.insert("typedef",
-                {'tqualname': ensureString(c.shortName),
+                {'tname': ensureString(type.shortName),
                  'tloc': tloc,
-                 'tname': ttypedefname,
+                 'tqualname': ttypedefname,
                  'ttypedefloc': ttypedefloc,
                  'tkind': 'typedef',
                  'ttemplate': ttemplate,
                  'tignore': tignore,
-                 'tmodule': 'fixme'
                  });
     }/*function processTypedef*/
 
-    function processEnum(c)
+    function processEnum(type)
     {
-        if (!c.name || c.name.toString() == 'undefined') return;
+        if (!type.name || type.name.toString() == 'undefined') return;
 
         // Normalize path and throw away column info -- we just care about file + line for types.
-        var tloc = locationToString(c);
-        m = parseName(c);
+        var tloc = locationToString(type);
+        m = parseName(type);
         csv.insert("type",
                 {'tname': ensureString(m.name),
-                 'tqualname': ensureString(c.name),
+                 'tqualname': ensureString(type.name),
                  'tloc': tloc,
-                 'tkind': c.kind,
+                 'tkind': type.kind,
                  /*
                  'scopename': 'SOME_SCOPE', 
                  'scopeloc': 'file:1:2'
                  */
                 });
-        if (c.members)
+        if (type.members)
         {
-            for (var i = 0; i < c.members.length; i++)
+            for (var i = 0; i < type.members.length; i++)
             {
-                var mstatic = c.members[i].isStatic ? 1 : -1;
-                var maccess = ensureString(c.members[i].access);
+                var mstatic = type.members[i].isStatic ? 1 : -1;
+                var maccess = ensureString(type.members[i].access);
                 // XXX
                 csv.insert("variable",
                         {
-                        'vname': c.name+'::'+c.members[i].name,
+                        'vname': type.name+'::'+type.members[i].name,
                         'vloc': tloc,
-                        'vtype': c.kind
+                        'vtype': type.kind
                         });
             }
         }
     }/*processEnum*/
 
-    function processClassOrStruct(c)
+    function processClassOrStruct(type)
     {
-        if (!c.name || c.name.toString() == 'undefined') return;
+        if (!type.name
+        || type.name.toString() == 'undefined')
+            return;
 
         // Various internal types are uninteresting for autocomplete and such
         var tignore = 0;
-        if (/.*COMTypeInfo.*/.exec(c.name)) return;
+        if (/.*COMTypeInfo.*/.exec(type.name)) return;
 
         // Lots of types are really just instances of a handful of templates
         // for example nsCOMPtr.  Keep track of the underlying template type
         //var ttemplate = '';
-        //if (c.template) ttemplate = c.template.name;
+        //if (type.template) ttemplate = type.template.name;
         // If this type is a typedef for something else, get that info too
         //var ttypedefname = '';
         //var ttypedefloc = '';
-        //if (c.typedef) {
-        //    ttypedefname = c.typedef.name;
+        //if (type.typedef) {
+        //    ttypedefname = type.typedef.name;
         //    // Throw away column info for types.
-        //    ttypedefloc = locationToString(c.typedef);
+        //    ttypedefloc = locationToString(type.typedef);
         //}
         // Only add types when seen within source (i.e., ignore all type
         // info when used vs. declared, since we want source locations).
@@ -704,17 +717,17 @@ function process_type(c)
         // into the objdir, and linked locally (e.g., xpcom/glue), and in such cases
         // loc will be a filename with no path.  These are useful to have after post-processing.
         // Normalize path and throw away column info -- we just care about file + line for types.
-        var tloc = locationToString(c);
-        m = parseName(c);
+        var tloc = locationToString(type);
+        m = parseName(type);
         csv.insert("type",
             {'tname': m.name,
-            'tqualname': c.name,
+            'tqualname': type.name,
             'tloc': tloc,
-            'tkind': c.kind
+            'tkind': type.kind
             });
 
-        if (c.members) printMembers(c, c.members);
-        if (c.bases) printAllBases(c, c.bases, true);
+        if (type.members) printMembers(type, type.members);
+        if (type.bases) printAllBases(type, type.bases, true);
     }/*processClassOrStruct*/
 }
 
@@ -737,16 +750,35 @@ function process_type(c)
  *  nsAccessible printMembers() mtname=nsAccessible mname=mAccChildCount loc=/home/dave/mozilla-central/src/accessible/src/base/nsAccessible.h:253
  */
 
+/*
+ * Dehydra calls this for each function definition
+ * (declarations without bodies are not included),
+ * including both top-level functions, class member
+ * functions, and inline class member functions.
+ *
+ * @param decl  A Variable Type object representing the
+ *              function being processed
+ * @param body  An array of
+ *              {loc:, statements:array of Variable Types}
+ *              representing an outline of the function
+ *              stripped down to
+ *                  variables, function calls and assignments.
+ */
 function process_function(decl, body)
 {
     // Only worry about members in the source tree.
     if (ignorableFile(decl.loc.file)) return;
 
-    var floc = locationToString(decl);
-
+    csv.insert("function",
+            {
+            'fname': decl.name,
+            'flongname': decl.name,
+            'floc': locationToString(decl)
+            });
+/*
     if (decl.isStatic && !decl.memberOf)
     {
-        // file-scope static
+        // file-scoped static function
         csv.insert("function",
                 {
                 'fname': decl.name,
@@ -768,12 +800,14 @@ function process_function(decl, body)
     { // regular member in the src
         var m = parseName(decl);
         var mtloc = UNKNOWN_LOCATION;
-        if (decl.memberOf && decl.memberOf.loc) mtloc = locationToString(decl.memberOf);
-        var update = "update or abort members set mdef=" + quote(floc);
-        update += " where mtname=" + quote(m.tname) + " and mtloc=" + quote(mtloc) + " and mname=" + quote(m.name) + ";";
-        debugPrint(2,"UPDATE:" + update);
+        if (decl.memberOf && decl.memberOf.loc)
+            mtloc = locationToString(decl.memberOf);
+        //var update = "update or abort members set mdef=" + quote(floc);
+        //update += " where mtname=" + quote(m.tname) + " and mtloc=" + quote(mtloc) + " and mname=" + quote(m.name) + ";";
+        //debugPrint(2,"UPDATE:" + update);
     }
 
+*/
     for (var i = 0; i < body.length; i++)
     {
         processStatements(body[i]);
@@ -781,6 +815,13 @@ function process_function(decl, body)
 
     function processStatements(stmts)
     {
+        for (var j = 0; j < stmts.statements.length; j++)
+        {
+            var stmt = stmts.statements[j];
+            // advance the column on this line by one to indicate we're "further" right/down
+            if (stmts.loc) stmts.loc.column += j;
+            processVariable(stmt);
+        }
         function processVariable(s, /* optional */ loc)
         {
             // if name is undef, skip this
@@ -800,18 +841,27 @@ function process_function(decl, body)
             var vname = s.name;
 
             // Ignore statements and other things we can't easily link in the source.
-            if ((/:?:?operator/.exec(vname)) /* overloaded operators */ || (/^D_[0-9]+$/.exec(vname)) /* gcc temporaries */ || (/^_ZTV.*$/.exec(vname)) /* vtable vars */ || (/.*COMTypeInfo.*/.exec(vname)) /* ignore COMTypeInfo<int> */ || ('this' == vname) || (/^__built_in.*$/.exec(vname))) /* gcc built-ins */
-            return;
+            if ((/:?:?operator/.exec(vname)) /* overloaded operators */
+            || (/^D_[0-9]+$/.exec(vname)) /* gcc temporaries */
+            || (/^_ZTV.*$/.exec(vname)) /* vtable vars */
+            || (/.*COMTypeInfo.*/.exec(vname)) /* ignore COMTypeInfo<int> */
+            || ('this' == vname)
+            || (/^__built_in.*$/.exec(vname))) /* gcc built-ins */
+                return;
             var vtype = '';
             var vtloc = '';
             var vmember = '';
             var vmemberloc = '';
             var vdeclloc = '';
 
+
             // Special case these smart pointer types: nsCOMPtr, nsRefPtr, nsMaybeWeakPtr, and nsAutoPtr.
             // This is a hack, and very Mozilla specific, but lets us treat these as if they were regular
             // pointer types.
-            if ((/^nsCOMPtr</.exec(s.type.name) || /^nsRefPtr</.exec(s.type.name) || /^nsAutoPtr</.exec(s.type.name) || /^nsMaybeWeakPtr</.exec(s.type.name)) && s.type.template)
+            if ((/^nsCOMPtr</.exec(s.type.name)
+            || /^nsRefPtr</.exec(s.type.name)
+            || /^nsAutoPtr</.exec(s.type.name)
+            || /^nsMaybeWeakPtr</.exec(s.type.name)) && s.type.template)
             {
                 // Use T in nsCOMPtr<T>.
                 vtype = s.type.template.arguments[0].name + "*"; // it's really a pointer, so add *
@@ -823,14 +873,9 @@ function process_function(decl, body)
             else if (/::/.exec(s.name))
             {
                 var parts = parseName(s);
+                vname = s.name;
                 vtype = s.type.name;
-                vtloc = s.type.loc;
-                if (s.memberOf && s.memberOf.loc)
-                {
-                    vmember = s.memberOf.name;
-                    vmemberloc = locationToString(s.memberOf);
-                }
-                vname = parts.name ? parts.name : vname;
+                vtloc = locationToString(s);
             }
             else
             {
@@ -846,42 +891,27 @@ function process_function(decl, body)
                 }
             }
 
-            if (s.fieldOf && !vtloc) vtloc = s.fieldOf.type.loc;
-
-            var vlocf = vloc.file;
-            var vlocl = vloc.line;
-            var vlocc = vloc.column;
-
+            if (s.fieldOf && !vtloc)
+                vtloc = s.fieldOf.type.loc;
             // There may be no type, so no vtloc
-            if (vtloc)
-            {
-                vtloc = locationToString(vtloc);
-            }
+            //if (vtloc)
+            //{
+            //    vtloc = locationToString(vtloc);
+           // }
 
             if (s.loc)
             {
                 vdeclloc = locationToString(s);
             }
 
-            var vfuncloc = locationToString(decl);
-            var vshortname = s.shortName; //vname.replace(/\(.*$/, '');
             var visFcall = s.isFcall ? 1 : -1;
 
             csv.insert("variable",
-                {'vfuncname': decl.name,
-                'vfuncloc': vfuncloc,
-                'vname': vname,
-                'vshortname': vshortname,
-                'vloc': vlocf,
-                'vlocl': vlocl,
-                'vlocc': vlocc,
-                'vtype': ensureString(vtype),
-                'vtloc': vtloc,
-                'vmember': vmember,
-                'vmemberloc': vmemberloc,
-                'visFcall': visFcall,
-                'vdeclloc': vdeclloc
-                });
+                    {
+                    'vname': vname,
+                    'vloc': vtloc,
+                    'vtype': vtype
+                    });
 
             // Deal with args to functions called by this var (i.e., function call, get a and b for g(a, b))
             if (s.arguments)
@@ -905,14 +935,6 @@ function process_function(decl, body)
                 }
             }
         } /*function processVariable*/
-
-        for (var j = 0; j < stmts.statements.length; j++)
-        {
-            var s = stmts.statements[j];
-            // advance the column on this line by one to indicate we're "further" right/down
-            if (stmts.loc) stmts.loc.column += j;
-            processVariable(s);
-        }
     } /*function processStatements*/
 }
 

@@ -9,16 +9,21 @@ WWWDIR=/home/mariusn/public_html/
 CGI_BIN=$WWWDIR/cgi-bin/
 [ ! -d $CGI_BIN ] && mkdir $CGI_BIN
 
-. setup-env.sh $SRCDIR
+. setup-env.sh ./dxr.config mozilla-central
+
 cd $SRCDIR
-$CXX 1167.C
+$CXX 1167.cpp -o /dev/null
 cd -
 ./dxr-index.py 2>&1
+
 
 cp -r www/js $WWWDIR
 cp -r www/images/ $WWWDIR
 cp -r www/*.css $WWWDIR
+rsync -av ../viewsource $WWWDIR
 
 cp dxr.config $CGI_BIN
 cp www/search.cgi $CGI_BIN
 cp www/getinfo.cgi $CGI_BIN
+cp ../viewsource/viewsource.cgi $CGI_BIN
+cp ../viewsource/viewsource.config $CGI_BIN
