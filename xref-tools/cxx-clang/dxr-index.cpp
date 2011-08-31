@@ -188,7 +188,7 @@ public:
       NamedDecl *namesource = scope;
       if (TagDecl::classof(scope)) {
         TagDecl *tag = static_cast<TagDecl*>(scope);
-        NamedDecl *redecl = tag->getTypedefNameForAnonDecl();
+        NamedDecl *redecl = tag->getTypedefForAnonDecl();
         if (redecl)
           namesource = redecl;
       }
@@ -247,7 +247,7 @@ public:
     // Information we need for types: kind, fqname, simple name, location
     beginRecord("type", d->getLocation());
     // We get the name from the typedef if it's an anonymous declaration...
-    NamedDecl *nd = d->getTypedefNameForAnonDecl();
+    NamedDecl *nd = d->getTypedefForAnonDecl();
     if (!nd)
       nd = d;
     recordValue("tname", nd->getNameAsString());
@@ -324,8 +324,8 @@ public:
       }
     }
     *out << std::endl;
-    const FunctionDecl *def;
-    if (d->isDefined(def))
+    const FunctionDecl *def=NULL;
+    if (d->hasBody(def))
       declDef(d, def);
     return true;
   }
@@ -346,7 +346,7 @@ public:
   bool VisitFieldDecl(FieldDecl *d) { visitVariableDecl(d); return true; }
   bool VisitVarDecl(VarDecl *d) { visitVariableDecl(d); return true; }
 
-  bool VisitTypedefNameDecl(TypedefNameDecl *d) {
+  bool VisitTypedefNameDecl(TypedefDecl *d) {
     if (!interestingLocation(d->getLocation()))
       return true;
     // If the underlying declaration is anonymous, the "real" name is already
@@ -376,7 +376,7 @@ public:
       return true;
     if (!TagDecl::classof(d) && !NamespaceDecl::classof(d) &&
         !FunctionDecl::classof(d) && !FieldDecl::classof(d) &&
-        !VarDecl::classof(d) && !TypedefNameDecl::classof(d) &&
+        !VarDecl::classof(d) && !TypedefDecl::classof(d) &&
         !EnumConstantDecl::classof(d) && !AccessSpecDecl::classof(d) &&
         !LinkageSpecDecl::classof(d))
       printf("Unprocessed kind %s\n", d->getDeclKindName());
