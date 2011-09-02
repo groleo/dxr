@@ -14,6 +14,7 @@
 #include <sstream>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 // Needed for sha1 hacks
 #include <fcntl.h>
@@ -581,7 +582,15 @@ protected:
       output = env;
     else
       output = srcdir;
-    output = realpath(output.c_str(), NULL);
+
+    const char *rp = realpath(output.c_str(), NULL);
+    if (NULL==rp) {
+	// XXX: a warning would be nice for user's help
+        if ( mkdir(output.c_str(), 0755) )
+            return false;
+        rp = output.c_str() ;
+    }
+    output = rp ;
     output += "/";
     return true;
   }
