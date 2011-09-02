@@ -347,7 +347,7 @@ public:
   bool VisitFieldDecl(FieldDecl *d) { visitVariableDecl(d); return true; }
   bool VisitVarDecl(VarDecl *d) { visitVariableDecl(d); return true; }
 
-  bool VisitTypedefNameDecl(TypedefDecl *d) {
+  bool VisitTypedefDecl(TypedefDecl *d) {
     if (!interestingLocation(d->getLocation()))
       return true;
     // If the underlying declaration is anonymous, the "real" name is already
