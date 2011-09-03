@@ -4,13 +4,40 @@
 SRCDIR=/home/mariusn/workspace/mine/
 WWWDIR=/home/mariusn/public_html/
 
-#rm -rf $WWWDIR/*
+if [ ! -d $WWWDIR ]; then
+	mkdir $WWWDIR
+	chmod 0755 $WWWDIR
+	setsebool -P httpd_enable_homedirs true
+fi
 
 CGI_BIN=$WWWDIR/cgi-bin/
 [ ! -d $CGI_BIN ] && mkdir $CGI_BIN
 
-. setup-env.sh ./dxr.config mozilla-central
+if [ ! -d tools ] ; then
+	mkdir tools
+fi
 
+if [ ! -d tools/dehydra ] ; then
+	cd tools
+	hg clone http://hg.mozilla.org/rewriting-and-analysis/dehydra/
+	cd -
+fi
+if [ -d tools/dehydra ] ; then
+	cd tools/dehydra
+	if [ ! -f Makefile ]; then
+	CXX=`which g++` CC=`which gcc` \
+	./configure \
+		--enable-C \
+		--js-headers=/usr/include/xulrunner-sdk-2/ \
+		--js-libs=/usr/lib64/xulrunner-2/
+	make
+	fi
+	cd -
+fi
+
+. setup-env.sh ./dxr.config mozilla-central
+echo "OBJDIR=$OBJDIR"
+echo "DXRSRC=$DXRSRC"
 cd $SRCDIR
 $CXX 1167.cpp -o /dev/null
 cd -
@@ -20,10 +47,10 @@ cd -
 cp -r www/js $WWWDIR
 cp -r www/images/ $WWWDIR
 cp -r www/*.css $WWWDIR
-rsync -av ../viewsource $WWWDIR
+#rsync -av ../viewsource $WWWDIR
 
 cp dxr.config $CGI_BIN
 cp www/search.cgi $CGI_BIN
 cp www/getinfo.cgi $CGI_BIN
-cp ../viewsource/viewsource.cgi $CGI_BIN
-cp ../viewsource/viewsource.config $CGI_BIN
+#cp ../viewsource/viewsource.cgi $CGI_BIN
+#cp ../viewsource/viewsource.config $CGI_BIN
