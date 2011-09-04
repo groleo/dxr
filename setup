@@ -35,9 +35,12 @@ if [ -d tools/dehydra ] ; then
 	cd -
 fi
 
+ENVBEFORE="`env`"
 . setup-env.sh ./dxr.config mozilla-central
-echo "OBJDIR=$OBJDIR"
-echo "DXRSRC=$DXRSRC"
+ENVAFTER="`env`"
+echo "Environment variables exported by setup-env.sh:"
+diff <(echo "$ENVBEFORE") <(echo "$ENVAFTER") | sed -n 's/^> /  /gp'
+echo
 cd $SRCDIR
 $CXX 1167.cpp -o /dev/null
 cd -
