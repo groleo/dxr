@@ -291,7 +291,8 @@ function insertCall(edge)
         {'callername': edge.caller.fullName, //serializeFullMethod(edge.caller),
         'callerloc': edge.caller.loc,
         'calleename': edge.callee.fullName, //serializeFullMethod(edge.callee),
-        'calleeloc': edge.callee.loc
+        'calleeloc': edge.callee.loc,
+        'calltype':'static'
         });
 }
 
@@ -772,6 +773,7 @@ function process_function(decl, body)
     csv.insert("function",
             {
             'fname': decl.name,
+            'fqualname': decl.name,
             'flongname': decl.name,
             'floc': locationToString(decl)
             });
