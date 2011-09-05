@@ -37,7 +37,7 @@ big_blob = None
 
 def WriteOpenSearch(name, hosturl, virtroot, wwwdir):
   try:
-    fp = open(os.path.expanduser(os.path.join(wwwdir, 'opensearch-' + name + '.xml')), 'w')
+    fp = open(os.path.join(wwwdir, 'opensearch-' + name + '.xml'), 'w')
     try:
       fp.write("""<?xml version="1.0" encoding="UTF-8"?>
 <OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
@@ -50,7 +50,6 @@ def WriteOpenSearch(name, hosturl, virtroot, wwwdir):
     finally:
       fp.close()
   except IOError:
-    print('Shit %s'% os.path.expanduser(os.path.join(wwwdir, 'opensearch-' + name + '.xml')) )
     print('Error writing opensearchfile (%s): %s' % (name, sys.exc_info()[1]))
     return None
 
@@ -69,8 +68,8 @@ def make_index(file_list, dbdir):
   # contents of the sourcedir into a single file... it makes grep very fast,
   # since we don't have the syscall penalties for opening and closing every
   # file.
-  file_index = open(os.path.expanduser(os.path.join(dbdir, "file_index.txt")), 'w')
-  offset_index = open(os.path.expanduser(os.path.join(dbdir, "index_index.txt")), 'w')
+  file_index = open(os.path.join(dbdir, "file_index.txt"), 'w')
+  offset_index = open(os.path.join(dbdir, "index_index.txt"), 'w')
   for fname in file_list:
     offset_index.write('%s:%d\n' % (fname[0], file_index.tell()))
     f = open(fname[1], 'r')
@@ -94,7 +93,7 @@ def make_index_html(treecfg, dirname, fnames, htmlroot):
   else:
     srcpath = treecfg.sourcedir
   srcpath = os.path.join(srcpath, genroot)
-  of = open(os.path.expanduser(os.path.join(dirname, 'index.html')), 'w')
+  of = open(os.path.join(dirname, 'index.html'), 'w')
   try:
     of.write(treecfg.getTemplateFile("dxr-header.html"))
     of.write('''<div id="maincontent" dojoType="dijit.layout.ContentPane"
@@ -186,7 +185,7 @@ def builddb(treecfg, dbdir):
   # executed should make the sql stage go faster.
   print "Building SQL..."
   dbname = treecfg.tree + '.sqlite'
-  conn = sqlite3.connect(os.path.expanduser(os.path.join(dbdir, dbname)))
+  conn = sqlite3.connect(os.path.join(dbdir, dbname))
   conn.execute('PRAGMA synchronous=off')
   conn.execute('PRAGMA page_size=65536')
   # Safeguard against non-ASCII text. Let's just hope everyone uses UTF-8
@@ -365,7 +364,7 @@ def parseconfig(filename, doxref, dohtml, tree, debugfile):
   indexhtml = string.Template(indexhtml).safe_substitute(**treecfg.__dict__)
   indexhtml = indexhtml.replace('$OPTIONS', options)
   indexhtml = indexhtml.replace('$OPENSEARCH', opensearch)
-  index = open(os.path.expanduser(os.path.join(dxrconfig.wwwdir, 'index.html')), 'w')
+  index = open(os.path.join(dxrconfig.wwwdir, 'index.html'), 'w')
   index.write(indexhtml)
   index.close()
 

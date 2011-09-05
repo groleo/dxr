@@ -101,7 +101,7 @@ class DxrConfig(object):
     else:
       self.dxrroot = None
 
-    self.wwwdir = os.path.abspath(config.get('Web', 'wwwdir'))
+    self.wwwdir = os.path.abspath(os.path.expanduser(config.get('Web', 'wwwdir')))
     self.virtroot=config.get('Web','virtroot')
     if self.virtroot != '' and not self.virtroot.endswith('/'):
       self.virtroot += '/'
