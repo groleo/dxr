@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+if [ $# -lt 1 ]; then
+    echo "Usage: run-test.sh test_directory"
+    exit 1
+fi
+
 # Bring us to this directory.
 cd $(dirname $(readlink -f $0))
 
