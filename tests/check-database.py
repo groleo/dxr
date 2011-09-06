@@ -21,8 +21,14 @@ big_blob = dxr.load_big_blob(tree)
 big_blob['dxr.language_data'] = dxr.languages.language_data
 
 # Load the checker data
-load_data = open(tests.get(testname, 'checkdb'))
-check_blob = eval(load_data.read())
+checkdb = tests.get(testname, 'checkdb')
+load_data = open(checkdb)
+try:
+  check_blob = eval(load_data.read())
+except:
+  print "Error while reading %s :" % checkdb
+  raise
+
 load_data.close()
 
 
