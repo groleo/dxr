@@ -1,36 +1,43 @@
 #! /bin/bash -e
 
-
-SRCDIR=/home/mariusn/workspace/mine/
-WWWDIR=/home/mariusn/public_html/
+SRCDIR=${HOME}/workspace/mine/
+WWWDIR=${HOME}/public_html/
 
 if [ ! -d $WWWDIR ]; then
 	mkdir $WWWDIR
 	chmod 0755 $WWWDIR
-	setsebool -P httpd_enable_homedirs true
+	#setsebool -P httpd_enable_homedirs true
 fi
 
 CGI_BIN=$WWWDIR/cgi-bin/
 [ ! -d $CGI_BIN ] && mkdir $CGI_BIN
 
-if [ ! -d tools ] ; then
-	mkdir tools
-fi
+[ ! -d tools ] && mkdir tools
 
 if [ ! -d tools/dehydra ] ; then
 	cd tools
 	hg clone http://hg.mozilla.org/rewriting-and-analysis/dehydra/
 	cd -
 fi
+
 if [ -d tools/dehydra ] ; then
 	cd tools/dehydra
 	if [ ! -f Makefile ]; then
-	CXX=`which g++` CC=`which gcc` \
-	./configure \
-		--enable-C \
-		--js-headers=/usr/include/xulrunner-sdk-2/ \
-		--js-libs=/usr/lib64/xulrunner-2/
-	make
+		# Debian/Ubuntu
+		[ -e /usr/include/xulrunner-2.0 ] && JSHDRS=/usr/include/xulrunner-2.0
+		[ -e /usr/lib64/xulrunner-2.0 ] && JSLIBS=/usr/lib64/xulrunner-2.0
+
+		# Fedora
+		[ -e /usr/include/xulrunner-sdk-2 ] && JSHDRS=/usr/include/xulrunner-sdk-2
+		[ -e /usr/lib64/xulrunner-2 ] && JSLIBS=/usr/lib64/xulrunner-2
+
+		[ ! -d "$JSHDRS" -o ! -d "$JSLIBS" ] && echo "ERROR: xulrunner headers/libs not found" && exit 1
+		CXX=`which g++` CC=`which gcc` \
+		./configure \
+			--enable-C \
+			--js-headers=$JSHDRS \
+			--js-libs=$JSLIBS
+		make
 	fi
 	cd -
 fi
@@ -46,14 +53,10 @@ $CXX 1167.cpp -o /dev/null
 cd -
 ./dxr-index.py 2>&1
 
-
 cp -r www/js $WWWDIR
 cp -r www/images/ $WWWDIR
 cp -r www/*.css $WWWDIR
-#rsync -av ../viewsource $WWWDIR
 
 cp dxr.config $CGI_BIN
 cp www/search.cgi $CGI_BIN
 cp www/getinfo.cgi $CGI_BIN
-#cp ../viewsource/viewsource.cgi $CGI_BIN
-#cp ../viewsource/viewsource.config $CGI_BIN
