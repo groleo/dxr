@@ -1,6 +1,6 @@
 #! /bin/bash -e
 
-SRCDIR=${HOME}/workspace/mine/
+SRCDIR=`pwd`/tests/basic-cxx-dehydra
 WWWDIR=${HOME}/public_html/
 
 if [ ! -d $WWWDIR ]; then
@@ -49,7 +49,7 @@ echo "Environment variables exported by setup-env.sh:"
 diff <(echo "$ENVBEFORE") <(echo "$ENVAFTER") | sed -n 's/^> /  /gp'
 echo
 cd $SRCDIR
-$CXX 1167.cpp -o /dev/null
+$CXX test.cpp -o /dev/null
 cd -
 ./dxr-index.py 2>&1
 
