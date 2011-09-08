@@ -96,7 +96,7 @@ def can_use(treecfg):
   if treecfg is None:
     return True
   # This is a hack for being a mozilla tree: $srcdir/config/rules.mk
-  if os.path.exists(os.path.join(treecfg.sourcedir, 'config', 'rules.mk')):
+  if os.path.isfile(os.path.join(treecfg.sourcedir, 'config', 'rules.mk')):
     return True
   return False
 

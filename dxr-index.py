@@ -226,7 +226,7 @@ def indextree(treecfg, doxref, dohtml, debugfile):
     oldroot = os.path.join(treecfg.wwwdir, treecfg.tree + '-old')
     linkroot = os.path.join(treecfg.wwwdir, treecfg.tree)
     if os.path.isdir(currentroot):
-      if os.path.exists(os.path.join(currentroot, '.dxr_xref', '.success')):
+      if os.path.isfile(os.path.join(currentroot, '.dxr_xref', '.success')):
         # Move current -> old, change link to old
         try:
           shutil.rmtree(oldroot)
@@ -309,7 +309,7 @@ def indextree(treecfg, doxref, dohtml, debugfile):
 
       # Make output directory
       cpydir = os.path.dirname(cpypath)
-      if not os.path.exists(cpydir):
+      if not os.path.isdir(cpydir):
         os.makedirs(cpydir)
 
       p.apply_async(async_toHTML, [treecfg, srcpath, cpypath + ".html"])
