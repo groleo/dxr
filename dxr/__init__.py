@@ -102,9 +102,9 @@ class DxrConfig(object):
       self.dxrroot = None
 
     self.wwwdir = os.path.abspath(os.path.expanduser(config.get('Web', 'wwwdir')))
-    self.virtroot = os.path.abspath(os.path.expanduser(config.get('Web', 'virtroot')))
-    if self.virtroot.endswith('/'):
-      self.virtroot = self.virtroot[:-1]
+    self.virtroot = config.get('Web', 'virtroot')
+    if self.virtroot != '' and not self.virtroot.endswith('/'):
+      self.virtroot += '/'
     self.hosturl = config.get('Web', 'hosturl')
     if not self.hosturl.endswith('/'):
       self.hosturl += '/'
