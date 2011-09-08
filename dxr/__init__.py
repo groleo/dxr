@@ -95,14 +95,14 @@ class DxrConfig(object):
   def __init__(self, config, tree=None):
     self._tree = tree
     self._loadOptions(config, 'DXR')
-    self.templates = os.path.abspath(config.get('DXR', 'templates'))
+    self.templates = os.path.abspath(os.path.expanduser(config.get('DXR', 'templates')))
     if config.has_option('DXR', 'dxrroot'):
-      self.dxrroot = os.path.abspath(config.get('DXR', 'dxrroot'))
+      self.dxrroot = os.path.abspath(os.path.expanduser(config.get('DXR', 'dxrroot')))
     else:
       self.dxrroot = None
 
-    self.wwwdir = os.path.abspath(config.get('Web', 'wwwdir'))
-    self.virtroot = os.path.abspath(config.get('Web', 'virtroot'))
+    self.wwwdir = os.path.abspath(os.path.expanduser(config.get('Web', 'wwwdir')))
+    self.virtroot = os.path.abspath(os.path.expanduser(config.get('Web', 'virtroot')))
     if self.virtroot.endswith('/'):
       self.virtroot = self.virtroot[:-1]
     self.hosturl = config.get('Web', 'hosturl')
