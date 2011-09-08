@@ -22,7 +22,13 @@ set -e
 
 # Environment setup
 echo "Setting up the environment:"
+ENVBEFORE="`env`"
 . ../setup-env.sh $dir $dir
+ENVAFTER="`env`"
+echo "Environment variables exported by setup-env.sh:"
+diff <(echo "$ENVBEFORE") <(echo "$ENVAFTER") | sed -n 's/^> /  /gp'
+echo
+
 
 # Clean up any failing runs and then build everything
 echo -e "\n\nBuilding:"
