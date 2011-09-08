@@ -154,6 +154,13 @@ function printAllBases(t, bases)
                 'tcloc':tcloc,
                 'access':access
                 });
+	csv.insert("ref",
+		{'varname':bases[i].type.name,
+		'varloc':tbloc,
+		'refloc':tcloc
+		});
+
+
         if (bases[i].type.bases)
         {
             // pass t instead of base[i].name so as to flatten the inheritance tree for t
@@ -276,14 +283,14 @@ function insertNode(node)
         'isVirtual': serializeBoolean(node.isVirtual),
         'loc': node.loc
         };
-    debugPrint(1,"insertNode:"+o);
+    debugPrint(2,"insertNode:"+o);
     csv.insert('node', o ) ;
 }
 
 
 function insertCall(edge)
 {
-    debugPrint(1,"insertCall");
+    debugPrint(2,"insertCall");
     //insertSQL( 'edge', ['caller', 'callee'],
     //['SELECT id FROM node WHERE name = "' + serializeFullMethod(edge.caller) + '" AND loc = "' + edge.caller.loc,
     // 'SELECT id FROM node WHERE name = "' + serializeFullMethod(edge.callee) + '" AND loc = "' + edge.callee.loc ]);
@@ -340,8 +347,6 @@ function insertVirtuals(virtuals)
 // for a fnptr, there will be no namespace, class name,
 // or method name, just a return type and params.
 //////////////////////////////////////////////////////////////////////////////
-
-
 function getNames(decl)
 {
     debugPrint(2,"getNames");
@@ -449,7 +454,7 @@ function getNames(decl)
             for (pt in flatten_chain(args))
             if (TREE_CODE(TREE_VALUE(pt)) != VOID_TYPE)];
     names.fullName=serializeMethod(names);
-    debugPrint(1,names);
+    debugPrint(2,names);
     return names;
 }
 
@@ -524,7 +529,17 @@ function resolveFunctionDecl(expr)
 function process_decl(decl)
 {
     if (ignorableFile(decl.loc.file)) return;
-    if ( ! decl.isFunction ) return;
+    debugPrint(3,"s:"+decl+">>>");
+    if ( ! decl.isFunction ) {
+       debugPrint(3,"exNotFunction");
+            csv.insert("variable",
+                    {
+                    'vname': decl.shortName,
+                    'vloc': locationToString(decl),
+                    'vtype': decl.type.name // this will not work for arrays
+                    });
+       return;
+    }
 
     // Skip things we don't care about
     if ((/:?:?operator.*$/.exec(decl.name)) /* overloaded operators */
@@ -618,9 +633,6 @@ function process_decl(decl)
 function process_type(type)
 {
     if ( ignorableFile(type.loc.file) ) return ;
-    
-        return;
-
     //XXX - what to do about other types?
     if (type.typedef) return processTypedef(type);
     if (type.kind == 'enum') return processEnum(type);
@@ -822,12 +834,12 @@ function process_function(decl, body)
             var stmt = stmts.statements[j];
             // advance the column on this line by one to indicate we're "further" right/down
             if (stmts.loc) stmts.loc.column += j;
-            processVariable(stmt);
+            processVariable(stmt,stmts.loc);
         }
         function processVariable(s, /* optional */ loc)
         {
             // if name is undef, skip this
-            if (!s.name) return;
+            if (!s.name) { debugPrint(3, "ex1"+s); return; }
 
             // XXX: should I figure out what is going on here?  Sometimes type is null...
             if (!s.type) return;
@@ -907,12 +919,13 @@ function process_function(decl, body)
             }
 
             var visFcall = s.isFcall ? 1 : -1;
-
-            csv.insert("variable",
+            debugPrint(1,"REF:"+loc+"======"+s+"\n");
+            csv.insert("ref",
                     {
                     'vname': vname,
-                    'vloc': vtloc,
-                    'vtype': vtype
+                    'varloc': locationToString(s),
+                    'vtype': vtype,
+		    'refloc': loc
                     });
 
             // Deal with args to functions called by this var (i.e., function call, get a and b for g(a, b))
