@@ -18,7 +18,7 @@ debugLvl=1
 
 def debugPrint(lvl,args):
     if lvl == debugLvl:
-        print "IDX:", args
+        print "PY:", args
 
 # handlers for first columnt field
 def process_decldef(args):
@@ -491,7 +491,7 @@ def get_syntax_regions(blob, srcpath, treecfg):
 htmlifier_store = {}
 
 htmlifier = {}
-for f in ('.c', '.cc', '.cpp', '.C', '.h', '.hpp'):
+for f in ('.c', '.cc', '.cpp', '.C', '.h', '.hpp', '.H'):
   htmlifier[f] = {'get_sidebar_links': get_sidebar_links,
       'get_link_regions': get_link_regions,
       'get_line_annotations': get_line_annotations,

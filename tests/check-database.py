@@ -19,6 +19,7 @@ tree = dxrcfg.trees[0]
 big_blob = dxr.load_big_blob(tree)
 # For the purposes of language data, dxr.languages.language_data too
 big_blob['dxr.language_data'] = dxr.languages.language_data
+print "BIG:%s\n" % big_blob
 
 # Load the checker data
 checkdb = tests.get(testname, 'checkdb')
@@ -29,6 +30,7 @@ except:
   print "Error while reading %s :" % checkdb
   raise
 
+print "CHECK:%s" % check_blob
 load_data.close()
 
 
