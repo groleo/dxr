@@ -42,6 +42,9 @@ if [ -d tools/dehydra ] ; then
 	cd -
 fi
 
+
+exit 1
+
 ENVBEFORE="`env`"
 . setup-env.sh ./dxr.config mozilla-central
 ENVAFTER="`env`"

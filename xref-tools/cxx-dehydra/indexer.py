@@ -35,7 +35,7 @@ def process_typedef(typeinfo):
 
 def process_function(funcinfo):
   functions[(funcinfo['fqualname'], funcinfo['floc'])] = funcinfo
-  debugPrint (2,"process_function [%s]-[%s]" % (funcinfo['flongname'], funcinfo['floc']) )
+  debugPrint (2,"process_function [%s]-[%s]" % (funcinfo['fqualname'], funcinfo['floc']) )
 
 def process_impl(info):
   inheritance[info['tbname'], info['tbloc'], info['tcname'], info['tcloc']]=info
@@ -228,8 +228,8 @@ def make_blob():
       for tblname, tbl, key in tmap:
         if defn in tbl:
           declo = {"declloc": decl[1],"defid": tbl[defn][key],"table": tblname}
-          if "extent" in tbl[decl]:
-            declo["extent"] = tbl[decl]["extent"]
+          #if "extent" in tbl[decl]:
+          #  declo["extent"] = tbl[decl]["extent"]
           decldef.append(declo)
           break
 

@@ -1,16 +1,5 @@
 let DEBUG_LEVEL=1;
 
-/*
-decldef
-function
-impl
-macro
-ref
-type
-typedef
-variable
-warning
-*/
 //////////////////////////////////////////////////////////////////////////////
 // Utility functions
 //////////////////////////////////////////////////////////////////////////////
@@ -67,6 +56,20 @@ function ensureString(str)
     return (str || '');
 }
 
+/**
+ * Get the short name of a decl name. E.g. turn
+ * "MyNamespace::MyClass::Method(int j) const" into
+ * "Method"
+ */
+function getScopeName(decl)
+{
+  let name = decl.name;
+  let lp = name.lastIndexOf('::');
+  if (lp != -1)
+    name = name.slice(0, lp);
+  return name;
+}
+
 function quote(s)
 {
     return "'" + s + "'";
@@ -86,7 +89,8 @@ function locationToString(decl)
 
     try
     {
-        return resolve_path(path) + ':' + loc.line.toString() + ':' + loc.column.toString();
+	//resolve_path(path)
+        return path + ':' + loc.line.toString() + ':' + loc.column.toString();
     }
     catch (e)
     {
@@ -144,21 +148,24 @@ function printAllBases(t, bases)
 {
     for (var i = 0; i < bases.length; i++)
     {
+        debugPrint(1,"XXX:"+bases[i].name);
         var tbloc = locationToString(bases[i].type);
         var tcloc = locationToString(t);
         let access = bases[i].access + bases[i].isVirtual ? ' virtual' : '';
         csv.insert("impl",
-                {'tbname':bases[i].type.name,
-                'tbloc':tbloc,
+                {
                 'tcname':t.name,
                 'tcloc':tcloc,
+                'tbname':bases[i].type.name,
+                'tbloc':tbloc,
                 'access':access
                 });
-	csv.insert("ref",
-		{'varname':bases[i].type.name,
-		'varloc':tbloc,
-		'refloc':tcloc
-		});
+        csv.insert("ref",
+                {
+                'varname':bases[i].type.name,
+                'varloc':tbloc,
+                'refloc':tcloc
+                });
 
 
         if (bases[i].type.bases)
@@ -181,36 +188,29 @@ function printMembers(t, members)
         var m = parseName(members[i]);
         if (ignorableFile(members[i].loc.file)) continue;
 
-        // XXX: should I just use t.loc here instead?
-        var tloc = locationToString(members[i].memberOf);
-
         // if this is static, ignore the reported decl in the compilation unit.
         // .isStatic will only be reported in the containing compilation unit.
         //       if (!members[i].isStatic)
-        var loc = locationToString(members[i]);
-        var mvalue = ensureString(members[i].value); // enum members have a value
-        var mstatic = members[i].isStatic ? 1 : -1;
-        if (!members[i].isFunction || (members[i].isFunction && members[i].isExtern))
-        {
-            // This is being seen via an #include vs. being done here in full, so just get decl loc
-            var mshortname = m.name.replace(/\(.*$/, '');
-            csv.insert("decldef",
-                {
-                'name':m.tname,
-                'mname':m.name,
-                'defloc':tloc,
-                'declloc':loc,
-                'mvalue':mvalue,
-                'maccess':members[i].access,
-                'mstatic':mstatic
-                });
+        if (members[i].isFunction && members[i].isExtern) {
+                csv.insert("function",
+                        {
+                        'fname': members[i].shortName,
+                        'fqualname': members[i].name.replace(fargs,""),
+                        'ftype' : members[i].type.type.name,
+                        'fargs' : fargs,
+                        'floc': locationToString(members[i]),
+                        'scopename': getScopeName(members[i]),
+                        });
         }
         else
         {
             // This is an implementation, not a decl loc, update def (we'll get decl elsewhere)
-            // XXX
-            var update = "update or abort members set mdef=" + quote(loc);
-            update += " where mtname=" + quote(m.tname) + " and mtloc=" + quote(tloc) + " and mname=" + quote(m.name) + ";";
+            csv.insert("decldef",
+                {
+                'name':members[i].name,
+                'declloc':locationToString(members[i]),
+                'defloc':locationToString(members[i].memberOf),
+                });
         }
     }
 }
@@ -240,13 +240,11 @@ include('map.js');
 include('unstable/lazy_types.js');
 include('unstable/dehydra_types.js');
 
-
 let edges = [];
 let virtuals = [];
 
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
-
 
 function serializeFullMethod(method)
 {
@@ -274,7 +272,8 @@ function serializeBoolean(bool)
 
 function insertNode(node)
 {
-    let o = {'name': node.name, //serializeFullMethod(node)  ,
+    let o = {
+        'name': node.name, //serializeFullMethod(node)  ,
         'returnType': ensureString(node.rt),
         'namespace': ensureString(node.ns),
         'type': ensureString(node.class),
@@ -291,13 +290,11 @@ function insertNode(node)
 function insertCall(edge)
 {
     debugPrint(2,"insertCall");
-    //insertSQL( 'edge', ['caller', 'callee'],
-    //['SELECT id FROM node WHERE name = "' + serializeFullMethod(edge.caller) + '" AND loc = "' + edge.caller.loc,
-    // 'SELECT id FROM node WHERE name = "' + serializeFullMethod(edge.callee) + '" AND loc = "' + edge.callee.loc ]);
     csv.insert('call',
-        {'callername': edge.caller.fullName, //serializeFullMethod(edge.caller),
+        {
+        'callername': edge.caller.shortName, //serializeFullMethod(edge.caller),
         'callerloc': edge.caller.loc,
-        'calleename': edge.callee.fullName, //serializeFullMethod(edge.callee),
+        'calleename': edge.callee.shortName, //serializeFullMethod(edge.callee),
         'calleeloc': edge.callee.loc,
         'calltype':'static'
         });
@@ -325,7 +322,8 @@ function insertVirtuals(virtuals)
     for each(tuple in virtuals)
     {
         csv.insert('impl', 
-                {'implementor': serializeClass(tuple.implementor),
+                {
+                'implementor': serializeClass(tuple.implementor),
                 'interface': serializeClass(tuple.interface),
                 'method': serializeMethod(tuple.implementor),
                 'loc': tuple.interface.loc
@@ -347,12 +345,13 @@ function insertVirtuals(virtuals)
 // for a fnptr, there will be no namespace, class name,
 // or method name, just a return type and params.
 //////////////////////////////////////////////////////////////////////////////
-function getNames(decl)
+function getTNames(decl)
 {
-    debugPrint(2,"getNames");
+    debugPrint(2,"getTNames");
     let names = {};
 
-    let fn = TREE_CODE(TREE_TYPE(decl)) == FUNCTION_TYPE || TREE_CODE(TREE_TYPE(decl)) == METHOD_TYPE;
+    let fn = TREE_CODE(TREE_TYPE(decl)) == FUNCTION_TYPE
+          || TREE_CODE(TREE_TYPE(decl)) == METHOD_TYPE;
     if (!fn) throw new Error("decl is not a function!");
 
     // check if we have a function pointer.
@@ -454,6 +453,7 @@ function getNames(decl)
             for (pt in flatten_chain(args))
             if (TREE_CODE(TREE_VALUE(pt)) != VOID_TYPE)];
     names.fullName=serializeMethod(names);
+    names.shortName=names.method;
     debugPrint(2,names);
     return names;
 }
@@ -477,7 +477,7 @@ function processSubclasses(c, implementor)
             if (!DECL_VIRTUAL_P(func)) continue;
 
             // have a class method. pull the namespace and class names.
-            let iface = getNames(func);
+            let iface = getTNames(func);
             debugPrint(2,"iface: " + serializeFullMethod(iface));
 
             if (methodSignaturesMatch(implementor, iface))
@@ -597,22 +597,6 @@ function process_decl(decl)
                 vtype = decl.parameters[i].type.name;
                 vtloc = decl.parameters[i].type.loc ? locationToString(decl.parameters[i].type) : '';
             }
-    /*
-            csv.insert("function",
-                    {
-                    'fname': vshortname,
-                    'flongname': vfuncname,
-                    'floc': vfuncloc,
-                    'vshortname': vshortname,
-                    'vlocf': vlocf,
-                    'vlocl': vlocl,
-                    'vlocc': vlocc,
-                    'vtype': vtype,
-                    'vtloc': vtloc,
-                    'visFcall': -1,
-                    'visDecl': 1
-                    });
-    */
         }
     }// processFunArguments
 }
@@ -781,24 +765,22 @@ function process_function(decl, body)
 {
     // Only worry about members in the source tree.
     if (ignorableFile(decl.loc.file)) return;
-
+            if (decl.parameters.type)
+            {
+                vtype = decl.parameters.type.name;
+                vtloc = decl.parameters.type.loc ? locationToString(decl.parameters[i].type) : '';
+            }
+    fargs = '('+decl.name.split(decl.shortName+'(')[1];
+    debugPrint(1,"FARGS:"+fargs);
     csv.insert("function",
             {
-            'fname': decl.name,
-            'fqualname': decl.name,
-            'flongname': decl.name,
+            'fname': decl.shortName,
+            'fqualname': decl.name.replace(fargs,""),
+            'ftype' : decl.type.type.name,
+            'fargs' : fargs,
             'floc': locationToString(decl)
             });
 /*
-    if (decl.isStatic && !decl.memberOf)
-    {
-        // file-scoped static function
-        csv.insert("function",
-                {
-                'fname': decl.name,
-                'flongname': 'XX:LONGNAME',
-                'floc': floc
-                });
         csv.insert("members",
                 {'mtname': '[File Scope Static]',
                 'mtloc': decl.loc.file,
@@ -922,10 +904,9 @@ function process_function(decl, body)
             debugPrint(1,"REF:"+loc+"======"+s+"\n");
             csv.insert("ref",
                     {
-                    'vname': vname,
+                    'varname': vname,
                     'varloc': locationToString(s),
-                    'vtype': vtype,
-		    'refloc': loc
+                    'refloc': loc
                     });
 
             // Deal with args to functions called by this var (i.e., function call, get a and b for g(a, b))
@@ -955,7 +936,8 @@ function process_function(decl, body)
 
 function process_tree(fn)
 {
-    debugPrint(2,"CALLER: " + serializeFullMethod(getNames(fn)) + ' ' + location_of(fn));
+    debugPrint(2,"CALLER: " + serializeFullMethod(getTNames(fn)) + ' ' + location_of(fn));
+    debugPrint(1,"PTCACACACA:"+TREE_CODE(fn));
 
     let cfg = function_decl_cfg(fn);
     for (let bb in cfg_bb_iterator(cfg))
@@ -964,7 +946,7 @@ function process_tree(fn)
         {
             walk_tree(isn, function (t, stack)
             {
-                debugPrint(2,serializeFullMethod(getNames(fn)) + ' ' + TREE_CODE(t) + ' ' + location_of(t));
+                debugPrint(2,serializeFullMethod(getTNames(fn)) + ' ' + TREE_CODE(t) + ' ' + location_of(t));
                 if (TREE_CODE(t) != GIMPLE_CALL)
                 {
                     return;
@@ -972,25 +954,28 @@ function process_tree(fn)
 
                 let callee = resolveFunctionDecl(t);
                 if (!callee) throw new Error("unresolvable function " + expr_display(t));
-
-                debugPrint(2,"  callee:    " + serializeFullMethod(getNames(callee)));
-
                 // serialize the edge
                 let edge = {
                     caller: {},
                     callee: {}
                 };
-                edge.caller = getNames(fn);
-                edge.callee = getNames(callee);
+                edge.caller = getTNames(fn);
+                edge.callee = getTNames(callee);
                 edges.push(edge);
             });
         }
     }
 }
-
+function process_tree_decl(t)
+{
+	//if ( TREE_CODE(t) ==NAMESPACE_DECL )
+    debugPrint(1,"TDCACACACA:"+TREE_CODE(t) );
+}
 // scan the class, and its bases, for virtual functions
 function process_tree_type(t)
 {
+	//if ( TREE_CODE(t) ==NAMESPACE_DECL )
+    debugPrint(1,"TTCACACACA:"+TREE_CODE(t));
     //if (!COMPLETE_TYPE_P(t)) { debugPrint(2,"\tincomplete type:["+class_key_or_enum_as_string(t)); return; }
     // check if we have a class or struct
     let kind = class_key_or_enum_as_string(t);
@@ -1010,7 +995,7 @@ function process_tree_type(t)
 
         // ignore destructors here?
         // have a class method. pull the namespace and class names.
-        let implementor = getNames(func);
+        let implementor = getTNames(func);
 
         // have a nonpure virtual member function...
         // which could potentially be implemented by this class.

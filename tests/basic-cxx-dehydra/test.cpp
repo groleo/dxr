@@ -5,6 +5,8 @@ int horses[500];
 
 static int solve();
 
+namespace TestNameSpace {} ;
+
 namespace TestNameSpace {
 	struct declaredStruct ;
 	struct baseStruct {
