@@ -939,7 +939,7 @@ function process_function(decl, body)
 function process_tree(fn)
 {
     debugPrint(2,"CALLER: " + serializeFullMethod(getTNames(fn)) + ' ' + location_of(fn));
-    debugPrint(1,"PTCACACACA:"+TREE_CODE(fn));
+    debugPrint(1,"process_tree:location:"+location_of(fn) );
 
     let cfg = function_decl_cfg(fn);
     for (let bb in cfg_bb_iterator(cfg))
@@ -971,13 +971,12 @@ function process_tree(fn)
 function process_tree_decl(t)
 {
 	//if ( TREE_CODE(t) ==NAMESPACE_DECL )
-    debugPrint(1,"TDCACACACA:"+TREE_CODE(t) );
+    debugPrint(1,"process_tree_decl:"+t+":"+location_of(t) );
 }
 // scan the class, and its bases, for virtual functions
 function process_tree_type(t)
 {
-	//if ( TREE_CODE(t) ==NAMESPACE_DECL )
-    debugPrint(1,"TTCACACACA:"+TREE_CODE(t));
+    debugPrint(1,"TREE_CODE:"+TREE_CODE(t));
     //if (!COMPLETE_TYPE_P(t)) { debugPrint(2,"\tincomplete type:["+class_key_or_enum_as_string(t)); return; }
     // check if we have a class or struct
     let kind = class_key_or_enum_as_string(t);
