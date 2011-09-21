@@ -656,6 +656,7 @@ function process_type(type)
 
         // Normalize path and throw away column info -- we just care about file + line for types.
         var tloc = locationToString(type);
+        if ( tloc == "<built-in>:0:0" ) return;
         m = parseName(type);
         csv.insert("type",
                 {'tname': ensureString(m.name),
@@ -715,6 +716,7 @@ function process_type(type)
         // loc will be a filename with no path.  These are useful to have after post-processing.
         // Normalize path and throw away column info -- we just care about file + line for types.
         var tloc = locationToString(type);
+        if ( tloc == "<built-in>:0:0" ) return;
         m = parseName(type);
         csv.insert("type",
             {'tname': m.name,
