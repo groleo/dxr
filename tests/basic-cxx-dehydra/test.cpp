@@ -3,9 +3,6 @@ int k=0;
 int horses[500];
 
 
-static int solve();
-
-namespace TestNameSpace {} ;
 
 namespace TestNameSpace {
 	struct declaredStruct ;
@@ -25,6 +22,8 @@ namespace TestNameSpace {
 	};
 	typedef struct test_struct test_struct_t ;
 };
+
+static int solve();
 static int solve()
 {
 	return 0;
