@@ -1,48 +1,48 @@
-call,callername,"main",callerloc,"test.cpp:39:5",calleename,"read_input",calleeloc,"test.cpp:30:5",calltype,"static"
-call,callername,"main",callerloc,"test.cpp:39:5",calleename,"solve",calleeloc,"test.cpp:26:12",calltype,"static"
-call,callername,"read_input",callerloc,"test.cpp:30:5",calleename,"solve",calleeloc,"test.cpp:26:12",calltype,"static"
-decldef,name,"TestNameSpace::baseStruct",declloc,"test.cpp:10:9",defloc,"test.cpp:10:9"
-decldef,name,"TestNameSpace::baseStruct::SOME_ENUM",declloc,"test.cpp:12:8",defloc,"test.cpp:12:8"
-decldef,name,"TestNameSpace::baseStruct::SS",declloc,"test.cpp:16:8",defloc,"test.cpp:16:8"
-decldef,name,"TestNameSpace::test_struct",declloc,"test.cpp:20:9",defloc,"test.cpp:20:9"
-decldef,name,"TestNameSpace::test_struct::test",declloc,"test.cpp:22:8",defloc,"test.cpp:22:8"
-decldef,name,"main",declloc,"test.cpp:39:5",defloc,"test.cpp:39:5"
-decldef,name,"read_input",declloc,"test.cpp:30:5",defloc,"test.cpp:30:5"
-decldef,name,"solve",declloc,"test.cpp:26:12",defloc,"test.cpp:26:12"
-decldef,name,"solve",declloc,"test.cpp:6:12",defloc,"test.cpp:26:12"
-function,fname,"SS",fqualname,"TestNameSpace::baseStruct::SS",ftype,"void",fargs,"()",floc,"test.cpp:16:8",scopename,"TestNameSpace::baseStruct",scopeloc,"test.cpp:10:9",extent,201:203
-function,fname,"V",fqualname,"TestNameSpace::baseStruct::V",ftype,"void",fargs,"()",floc,"test.cpp:15:16",scopename,"TestNameSpace::baseStruct",scopeloc,"test.cpp:10:9",extent,189:190
-function,fname,"main",fqualname,"main",ftype,"int",fargs,"(int, char **)",floc,"test.cpp:39:5",extent,482:486
-function,fname,"read_input",fqualname,"read_input",ftype,"int",fargs,"()",floc,"test.cpp:30:5",extent,384:394
-function,fname,"solve",fqualname,"solve",ftype,"int",fargs,"()",floc,"test.cpp:26:12",extent,357:362
-function,fname,"solve",fqualname,"solve",ftype,"int",fargs,"()",floc,"test.cpp:6:12",extent,48:53
-function,fname,"test",fqualname,"TestNameSpace::test_struct::test",ftype,"void",fargs,"()",floc,"test.cpp:22:8",scopename,"TestNameSpace::test_struct",scopeloc,"test.cpp:20:9",extent,286:290
-impl,tcname,"TestNameSpace::test_struct",tcloc,"test.cpp:20:9",tbname,"TestNameSpace::baseStruct",tbloc,"test.cpp:10:9",access,"public"
-ref,varname,"TestNameSpace::baseStruct::dummy",varloc,"test.cpp:11:7",refloc,"test.cpp:17:4",extent,210:215
-ref,varname,"TestNameSpace::baseStruct",varloc,"test.cpp:10:9",refloc,"test.cpp:20:30",extent,257:267
-ref,varname,"TestNameSpace::test_struct",varloc,"test.cpp:20:9",refloc,"test.cpp:24:17",extent,315:326
-ref,varname,"i",varloc,"test.cpp:32:6",refloc,"test.cpp:33:13",extent,421:422
-ref,varname,"i",varloc,"test.cpp:32:6",refloc,"test.cpp:33:19",extent,427:428
-ref,varname,"i",varloc,"test.cpp:32:6",refloc,"test.cpp:33:8",extent,416:417
-ref,varname,"i",varloc,"test.cpp:32:6",refloc,"test.cpp:34:14",extent,443:444
-ref,varname,"i",varloc,"test.cpp:32:6",refloc,"test.cpp:34:20",extent,449:450
-ref,varname,"i",varloc,"test.cpp:32:6",refloc,"test.cpp:34:9",extent,438:439
-ref,varname,"n",varloc,"test.cpp:1:5",refloc,"test.cpp:33:15",extent,423:424
-ref,varname,"n",varloc,"test.cpp:1:5",refloc,"test.cpp:34:16",extent,445:446
-ref,varname,"read_input",varloc,"test.cpp:30:5",refloc,"test.cpp:41:2",extent,513:523
-ref,varname,"solve",varloc,"test.cpp:26:12",refloc,"test.cpp:35:4",extent,455:460
-ref,varname,"solve",varloc,"test.cpp:26:12",refloc,"test.cpp:42:2",extent,528:533
-type,tname,"SOME_ENUM",tqualname,"TestNameSpace::baseStruct::SOME_ENUM",tloc,"test.cpp:12:8",tkind,"enum",scopename,"TestNameSpace::baseStruct",scopeloc,"test.cpp:10:9",extent,150:159
-type,tname,"baseStruct",tqualname,"TestNameSpace::baseStruct",tloc,"test.cpp:10:9",tkind,"struct",extent,117:127
-type,tname,"declaredStruct",tqualname,"TestNameSpace::declaredStruct",tloc,"test.cpp:9:9",tkind,"struct",extent,92:106
-type,tname,"test_struct",tqualname,"TestNameSpace::test_struct",tloc,"test.cpp:20:9",tkind,"struct",extent,236:247
-typedef,tname,"test_struct_t",tqualname,"TestNameSpace::test_struct_t",tloc,"test.cpp:24:29",ttypedef,"struct struct test_struct",extent,327:340
-variable,vname,"TestNameSpace::baseStruct::SOME_ENUM::abc",vloc,"test.cpp:13:4",vtype,"enum TestNameSpace::baseStruct::SOME_ENUM",scopename,"TestNameSpace::baseStruct::SOME_ENUM",scopeloc,"test.cpp:12:8",extent,165:168
-variable,vname,"TestNameSpace::baseStruct::dummy",vloc,"test.cpp:11:7",vtype,"int",scopename,"TestNameSpace::baseStruct",scopeloc,"test.cpp:10:9",extent,136:141
-variable,vname,"TestNameSpace::test_struct::a",vloc,"test.cpp:21:7",vtype,"int",scopename,"TestNameSpace::test_struct",scopeloc,"test.cpp:20:9",extent,276:277
-variable,vname,"argc",vloc,"test.cpp:39:14",vtype,"int",scopename,"main",scopeloc,"test.cpp:39:5",extent,491:495
-variable,vname,"argv",vloc,"test.cpp:39:25",vtype,"char **",scopename,"main",scopeloc,"test.cpp:39:5",extent,502:506
+call,callername,"main",callerloc,"test.cpp:40:5",calleename,"read_input",calleeloc,"test.cpp:31:5",calltype,"static"
+call,callername,"main",callerloc,"test.cpp:40:5",calleename,"solve",calleeloc,"test.cpp:27:12",calltype,"static"
+call,callername,"read_input",callerloc,"test.cpp:31:5",calleename,"solve",calleeloc,"test.cpp:27:12",calltype,"static"
+decldef,name,"TestNameSpace::baseStruct",declloc,"test.cpp:9:9",defloc,"test.cpp:9:9"
+decldef,name,"TestNameSpace::baseStruct::SOME_ENUM",declloc,"test.cpp:11:8",defloc,"test.cpp:11:8"
+decldef,name,"TestNameSpace::baseStruct::SS",declloc,"test.cpp:15:8",defloc,"test.cpp:15:8"
+decldef,name,"TestNameSpace::test_struct",declloc,"test.cpp:19:9",defloc,"test.cpp:19:9"
+decldef,name,"TestNameSpace::test_struct::test",declloc,"test.cpp:21:8",defloc,"test.cpp:21:8"
+decldef,name,"main",declloc,"test.cpp:40:5",defloc,"test.cpp:40:5"
+decldef,name,"read_input",declloc,"test.cpp:31:5",defloc,"test.cpp:31:5"
+decldef,name,"solve",declloc,"test.cpp:26:12",defloc,"test.cpp:27:12"
+decldef,name,"solve",declloc,"test.cpp:27:12",defloc,"test.cpp:27:12"
+function,fname,"SS",fqualname,"TestNameSpace::baseStruct::SS",ftype,"void",fargs,"()",floc,"test.cpp:15:8",scopename,"TestNameSpace::baseStruct",scopeloc,"test.cpp:9:9",extent,181:183
+function,fname,"V",fqualname,"TestNameSpace::baseStruct::V",ftype,"void",fargs,"()",floc,"test.cpp:14:16",scopename,"TestNameSpace::baseStruct",scopeloc,"test.cpp:9:9",extent,169:170
+function,fname,"main",fqualname,"main",ftype,"int",fargs,"(int, char **)",floc,"test.cpp:40:5",extent,483:487
+function,fname,"read_input",fqualname,"read_input",ftype,"int",fargs,"()",floc,"test.cpp:31:5",extent,385:395
+function,fname,"solve",fqualname,"solve",ftype,"int",fargs,"()",floc,"test.cpp:26:12",extent,338:343
+function,fname,"solve",fqualname,"solve",ftype,"int",fargs,"()",floc,"test.cpp:27:12",extent,358:363
+function,fname,"test",fqualname,"TestNameSpace::test_struct::test",ftype,"void",fargs,"()",floc,"test.cpp:21:8",scopename,"TestNameSpace::test_struct",scopeloc,"test.cpp:19:9",extent,266:270
+impl,tcname,"TestNameSpace::test_struct",tcloc,"test.cpp:19:9",tbname,"TestNameSpace::baseStruct",tbloc,"test.cpp:9:9",access,"public"
+ref,varname,"TestNameSpace::baseStruct",varloc,"test.cpp:9:9",refloc,"test.cpp:19:30",extent,237:247
+ref,varname,"TestNameSpace::baseStruct::dummy",varloc,"test.cpp:10:7",refloc,"test.cpp:16:4",extent,190:195
+ref,varname,"TestNameSpace::test_struct",varloc,"test.cpp:19:9",refloc,"test.cpp:23:17",extent,295:306
+ref,varname,"i",varloc,"test.cpp:33:6",refloc,"test.cpp:34:13",extent,422:423
+ref,varname,"i",varloc,"test.cpp:33:6",refloc,"test.cpp:34:19",extent,428:429
+ref,varname,"i",varloc,"test.cpp:33:6",refloc,"test.cpp:34:8",extent,417:418
+ref,varname,"i",varloc,"test.cpp:33:6",refloc,"test.cpp:35:14",extent,444:445
+ref,varname,"i",varloc,"test.cpp:33:6",refloc,"test.cpp:35:20",extent,450:451
+ref,varname,"i",varloc,"test.cpp:33:6",refloc,"test.cpp:35:9",extent,439:440
+ref,varname,"n",varloc,"test.cpp:1:5",refloc,"test.cpp:34:15",extent,424:425
+ref,varname,"n",varloc,"test.cpp:1:5",refloc,"test.cpp:35:16",extent,446:447
+ref,varname,"read_input",varloc,"test.cpp:31:5",refloc,"test.cpp:42:2",extent,514:524
+ref,varname,"solve",varloc,"test.cpp:27:12",refloc,"test.cpp:36:4",extent,456:461
+ref,varname,"solve",varloc,"test.cpp:27:12",refloc,"test.cpp:43:2",extent,529:534
+type,tname,"SOME_ENUM",tqualname,"TestNameSpace::baseStruct::SOME_ENUM",tloc,"test.cpp:11:8",tkind,"enum",scopename,"TestNameSpace::baseStruct",scopeloc,"test.cpp:9:9",extent,130:139
+type,tname,"baseStruct",tqualname,"TestNameSpace::baseStruct",tloc,"test.cpp:9:9",tkind,"struct",extent,97:107
+type,tname,"declaredStruct",tqualname,"TestNameSpace::declaredStruct",tloc,"test.cpp:8:9",tkind,"struct",extent,72:86
+type,tname,"test_struct",tqualname,"TestNameSpace::test_struct",tloc,"test.cpp:19:9",tkind,"struct",extent,216:227
+typedef,tname,"test_struct_t",tqualname,"TestNameSpace::test_struct_t",tloc,"test.cpp:23:29",ttypedef,"struct struct test_struct",extent,307:320
+variable,vname,"TestNameSpace::baseStruct::SOME_ENUM::abc",vloc,"test.cpp:12:4",vtype,"enum TestNameSpace::baseStruct::SOME_ENUM",scopename,"TestNameSpace::baseStruct::SOME_ENUM",scopeloc,"test.cpp:11:8",extent,145:148
+variable,vname,"TestNameSpace::baseStruct::dummy",vloc,"test.cpp:10:7",vtype,"int",scopename,"TestNameSpace::baseStruct",scopeloc,"test.cpp:9:9",extent,116:121
+variable,vname,"TestNameSpace::test_struct::a",vloc,"test.cpp:20:7",vtype,"int",scopename,"TestNameSpace::test_struct",scopeloc,"test.cpp:19:9",extent,256:257
+variable,vname,"argc",vloc,"test.cpp:40:14",vtype,"int",scopename,"main",scopeloc,"test.cpp:40:5",extent,492:496
+variable,vname,"argv",vloc,"test.cpp:40:25",vtype,"char **",scopename,"main",scopeloc,"test.cpp:40:5",extent,503:507
 variable,vname,"horses",vloc,"test.cpp:3:5",vtype,"int [500]",extent,22:28
-variable,vname,"i",vloc,"test.cpp:32:6",vtype,"int",scopename,"read_input",scopeloc,"test.cpp:30:5",extent,404:405
+variable,vname,"i",vloc,"test.cpp:33:6",vtype,"int",scopename,"read_input",scopeloc,"test.cpp:31:5",extent,405:406
 variable,vname,"k",vloc,"test.cpp:2:5",vtype,"int",extent,13:14
 variable,vname,"n",vloc,"test.cpp:1:5",vtype,"int",extent,4:5
