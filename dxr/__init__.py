@@ -46,6 +46,7 @@ def load_plugins(dxrsrc=None):
       m = imp.find_module('indexer', [fullname])
       module = imp.load_module('dxr.' + dirname, m[0], m[1], m[2])
       all_plugins.append(module)
+      print "Loaded plugin:%s" % module
     except:
       print "Unable to load plugin %s" % dirname
       print sys.exc_info()

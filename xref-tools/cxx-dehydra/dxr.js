@@ -89,7 +89,7 @@ function locationToString(decl)
 
     try
     {
-	//resolve_path(path)
+        //XXXresolve_path(path)
         return path + ':' + loc.line.toString() + ':' + loc.column.toString();
     }
     catch (e)
@@ -100,6 +100,36 @@ function locationToString(decl)
             // the source file name in gcc. in such cases, there's nothing we can really
             // do, and it's their fault if the filename clashes with something.
             return path + ':' + loc.line.toString() + ':' + loc.column.toString();
+        }
+
+        // something else happened - rethrow
+        throw new Error(e);
+    }
+}
+function getExtent(decl,name)
+{
+    let loc = decl.loc;
+    if (loc == UNKNOWN_LOCATION)
+    {
+        loc = location_of(decl);
+        if (loc == UNKNOWN_LOCATION) throw new Error("unknown location");
+        if (LOC_IS_BUILTIN(loc)) return "<built-in>";
+    }
+
+    try
+    {
+        //XXXresolve_path(path)
+        print("LENGTH:"+loc.column);
+        return loc.line.toString() + ':' + loc.column.toString() + ':' + loc.line.toString()+':'+(parseInt(loc.column)+parseInt(name.length));
+    }
+    catch (e)
+    {
+        if (e.message.indexOf("No such file or directory"))
+        {
+            // this can occur if people use the #line directive to artificially override
+            // the source file name in gcc. in such cases, there's nothing we can really
+            // do, and it's their fault if the filename clashes with something.
+            return loc.line.toString() + ':' + loc.column.toString() + ':' + name.length;
         }
 
         // something else happened - rethrow
@@ -164,7 +194,8 @@ function printAllBases(t, bases)
                 {
                 'varname':bases[i].type.name,
                 'varloc':tbloc,
-                'refloc':tcloc
+                'refloc':tcloc,
+                'extent': getExtent(bases[i].type,bases[i].type.name)
                 });
 
 
@@ -200,17 +231,18 @@ function printMembers(t, members)
                         'fargs' : fargs,
                         'floc': locationToString(members[i]),
                         'scopename': getScopeName(members[i]),
+                        'extent' :getExtent(members[i],members[i].shortName)
                         });
         }
         else
         {
             // This is an implementation, not a decl loc, update def (we'll get decl elsewhere)
-            csv.insert("decldef",
+            /*XXXcsv.insert("decldef",
                 {
                 'name':members[i].name,
                 'declloc':locationToString(members[i]),
                 'defloc':locationToString(members[i].memberOf),
-                });
+                });*/
         }
     }
 }
@@ -534,20 +566,21 @@ function process_decl(decl)
        debugPrint(3,"exNotFunction");
             csv.insert("variable",
                     {
-                    'vname': decl.shortName,
+                    'vname': decl.name,
                     'vloc': locationToString(decl),
-                    'vtype': decl.type.name // this will not work for arrays
+                    'vtype': decl.type.name, // this will not work for arrays
+                    'extent' :getExtent(decl,decl.shortName)
                     });
        return;
     }
 
     // Skip things we don't care about
-    if ((/:?:?operator.*$/.exec(decl.name)) /* overloaded operators */
-    || (/^D_[0-9]+$/.exec(decl.name))       /* gcc temporaries */
-    || (/^_ZTV.*$/.exec(decl.name))         /* vtable vars */
-    || (/.*COMTypeInfo.*/.exec(decl.name))  /* ignore COMTypeInfo<int> */
-    || ('this' == decl.name)                /* this */
-    || (/^__built_in.*$/.exec(decl.name)))  /* gcc built-ins */
+    if ((/:?:?operator.*$/.exec(decl.name)) // overloaded operators
+    || (/^D_[0-9]+$/.exec(decl.name))       // gcc temporaries
+    || (/^_ZTV.*$/.exec(decl.name))         // vtable vars
+    || (/.*COMTypeInfo.*/.exec(decl.name))  // ignore COMTypeInfo<int>
+    || ('this' == decl.name)                // this
+    || (/^__built_in.*$/.exec(decl.name)))  // gcc built-ins
         return;
 
     // Treat the actual func decl as a statement so we can easily linkify it
@@ -562,20 +595,17 @@ function process_decl(decl)
         vname = parts.name || vname;
     }
 
-    /*csv.insert("function1",
+    /*XXXcsv.insert("decldef",
         {
-        'fname': decl.shortName,
-        'flongname': decl.name,
-        'floc': locationToString(decl),
-        //'scopename':'scope1',
-        //'scopeloc':'f:1:2'
-        });
-    */
-    //processFunctionArguments(decl);
+        'name': decl.shortName,
+        'declloc': locationToString(decl),
+        'defloc':'12'
+        });*/
+    processFunctionArguments(decl);
 
     function processFunctionArguments(decl)
     {
-        if (!decl.parameters) return;
+        if (!decl.parameters) { print("NO_PARAMS"); return; }
 
         // Keep track of all params in the function
         for (var i = 0; i < decl.parameters.length; i++)
@@ -597,6 +627,13 @@ function process_decl(decl)
                 vtype = decl.parameters[i].type.name;
                 vtloc = decl.parameters[i].type.loc ? locationToString(decl.parameters[i].type) : '';
             }
+            csv.insert("variable",
+                     {
+                        'vname':vname,
+                        'vloc':locationToString(decl),
+                        'vtype':vtype,
+                        'extent' :getExtent(decl,decl.shortName)
+                     });
         }
     }// processFunArguments
 }
@@ -625,28 +662,19 @@ function process_type(type)
     function processTypedef(type)
     {
         // Normalize path and throw away column info -- we just care about file + line for types.
+        var tname = ensureString(type.name);
         var tloc = locationToString(type);
-        var ttypedefname = ensureString(type.typedef.name);
-        var ttypedefloc = '';
-        if (type.typedef.loc)
-        {
-            var vloc = type.typedef.loc;
-            ttypedefloc = locationToString(type.typedef);
-        }
+        var tqualname = ensureString(type.typedef.name);
 
         var ttemplate = '';
         if (type.template) ttemplate = type.template.name;
 
-        var tignore = 0;
-
         csv.insert("typedef",
-                {'tname': ensureString(type.shortName),
+                {'tname': tname,
                  'tloc': tloc,
-                 'tqualname': ttypedefname,
-                 'ttypedefloc': ttypedefloc,
+                 'tqualname': tqualname,
                  'tkind': 'typedef',
-                 'ttemplate': ttemplate,
-                 'tignore': tignore,
+                 'ttemplate': ttemplate
                  });
     }/*function processTypedef*/
 
@@ -663,7 +691,8 @@ function process_type(type)
                  'tqualname': ensureString(type.name),
                  'tloc': tloc,
                  'tkind': type.kind,
-                 /*
+                 'extent': getExtent(type,m.name)
+                 /*XXX
                  'scopename': 'SOME_SCOPE', 
                  'scopeloc': 'file:1:2'
                  */
@@ -679,7 +708,7 @@ function process_type(type)
                         {
                         'vname': type.name+'::'+type.members[i].name,
                         'vloc': tloc,
-                        'vtype': type.kind
+                        'vtype': type.kind,
                         });
             }
         }
@@ -767,11 +796,6 @@ function process_function(decl, body)
 {
     // Only worry about members in the source tree.
     if (ignorableFile(decl.loc.file)) return;
-            if (decl.parameters.type)
-            {
-                vtype = decl.parameters.type.name;
-                vtloc = decl.parameters.type.loc ? locationToString(decl.parameters[i].type) : '';
-            }
     fargs = '('+decl.name.split(decl.shortName+'(')[1];
     debugPrint(1,"FARGS:"+fargs);
     csv.insert("function",
@@ -780,10 +804,10 @@ function process_function(decl, body)
             'fqualname': decl.name.replace(fargs,""),
             'ftype' : decl.type.type.name,
             'fargs' : fargs,
-            'floc': locationToString(decl)
+            'floc': locationToString(decl),
+            'extent': getExtent(decl,decl.shortName)
             });
-/*
-        csv.insert("members",
+/*XXX csv.insert("members",
                 {'mtname': '[File Scope Static]',
                 'mtloc': decl.loc.file,
                 'mname': decl.name,
@@ -803,9 +827,7 @@ function process_function(decl, body)
         //var update = "update or abort members set mdef=" + quote(floc);
         //update += " where mtname=" + quote(m.tname) + " and mtloc=" + quote(mtloc) + " and mname=" + quote(m.name) + ";";
         //debugPrint(2,"UPDATE:" + update);
-    }
-
-*/
+    } */
     for (var i = 0; i < body.length; i++)
     {
         processStatements(body[i]);
@@ -820,7 +842,7 @@ function process_function(decl, body)
             if (stmts.loc) stmts.loc.column += j;
             processVariable(stmt,stmts.loc);
         }
-        function processVariable(s, /* optional */ loc)
+        function processVariable(s, loc)
         {
             // if name is undef, skip this
             if (!s.name) { debugPrint(3, "ex1"+s); return; }
@@ -836,15 +858,15 @@ function process_function(decl, body)
 
             if (!vloc) return;
 
-            var vname = s.name;
+            var vname = s.shortName;
 
             // Ignore statements and other things we can't easily link in the source.
-            if ((/:?:?operator/.exec(vname)) /* overloaded operators */
-            || (/^D_[0-9]+$/.exec(vname)) /* gcc temporaries */
-            || (/^_ZTV.*$/.exec(vname)) /* vtable vars */
-            || (/.*COMTypeInfo.*/.exec(vname)) /* ignore COMTypeInfo<int> */
+            if ((/:?:?operator/.exec(vname)) // overloaded operators
+            || (/^D_[0-9]+$/.exec(vname)) // gcc temporaries
+            || (/^_ZTV.*$/.exec(vname)) // vtable vars
+            || (/.*COMTypeInfo.*/.exec(vname)) // ignore COMTypeInfo<int>
             || ('this' == vname)
-            || (/^__built_in.*$/.exec(vname))) /* gcc built-ins */
+            || (/^__built_in.*$/.exec(vname))) // gcc built-ins
                 return;
             var vtype = '';
             var vtloc = '';
@@ -891,11 +913,6 @@ function process_function(decl, body)
 
             if (s.fieldOf && !vtloc)
                 vtloc = s.fieldOf.type.loc;
-            // There may be no type, so no vtloc
-            //if (vtloc)
-            //{
-            //    vtloc = locationToString(vtloc);
-           // }
 
             if (s.loc)
             {
@@ -903,7 +920,7 @@ function process_function(decl, body)
             }
 
             var visFcall = s.isFcall ? 1 : -1;
-            debugPrint(1,"REF:"+loc+"======"+s+"\n");
+            debugPrint(1,"REF:"+loc+"++==++"+vname);
             csv.insert("ref",
                     {
                     'varname': vname,

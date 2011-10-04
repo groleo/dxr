@@ -14,10 +14,10 @@ warnings = []
 macros = {}
 calls = {}
 
-debugLvl=1
+debugLvl=3
 
 def debugPrint(lvl,args):
-    if lvl == debugLvl:
+    if lvl <= debugLvl:
         print "PY:", args
 
 # handlers for first columnt field
@@ -228,8 +228,8 @@ def make_blob():
       for tblname, tbl, key in tmap:
         if defn in tbl:
           declo = {"declloc": decl[1],"defid": tbl[defn][key],"table": tblname}
-          #if "extent" in tbl[decl]:
-          #  declo["extent"] = tbl[decl]["extent"]
+          if "extent" in tbl[decl]:
+            declo["extent"] = tbl[decl]["extent"]
           decldef.append(declo)
           break
 
@@ -438,12 +438,12 @@ class CxxHtmlifier:
     if self.blob_file is None:
       return
     def make_link(obj, clazz, rid):
-      start, end = obj['extent'].split(':')
-      start, end = int(start), int(end)
+      startLine, startCol, endLine, endCol = obj['extent'].split(':')
+      startLine, startCol, endLine, endCol = int(startLine), int(startCol), int(endLine), int(endCol)
       kwargs = {}
       kwargs['rid'] = rid
       kwargs['class'] = clazz
-      return (start, end, kwargs)
+      return ( (startLine,startCol), (endLine,endCol), kwargs)
     tblmap = {
       "variables": ("var", "varid"),
       "functions": ("func", "funcid"),
@@ -477,6 +477,7 @@ def get_sidebar_links(blob, srcpath, treecfg):
     htmlifier_store[srcpath] = CxxHtmlifier(blob, srcpath, treecfg)
   return htmlifier_store[srcpath].collectSidebar()
 def get_link_regions(blob, srcpath, treecfg):
+  debugPrint(1,"get_link_regions")
   if srcpath not in htmlifier_store:
     htmlifier_store[srcpath] = CxxHtmlifier(blob, srcpath, treecfg)
   return htmlifier_store[srcpath].getLinkRegions()
