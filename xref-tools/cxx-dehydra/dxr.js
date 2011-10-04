@@ -81,7 +81,7 @@ function locationToString(decl)
     if (loc == UNKNOWN_LOCATION)
     {
         loc = location_of(decl);
-        if (loc == UNKNOWN_LOCATION) throw new Error("unknown location");
+        if (loc == UNKNOWN_LOCATION) throw new Error("unknown location:"+location_of(decl) );
         if (LOC_IS_BUILTIN(loc)) return "<built-in>";
     }
 
@@ -374,7 +374,7 @@ function getTNames(decl)
     {
         // we have a function or method.
         let context = DECL_CONTEXT(decl);
-        if (context)
+        if (context && TREE_CODE(context) != TRANSLATION_UNIT_DECL)
         {
             // use the context here since the declaration will be unique.
             names.loc = locationToString(context);
