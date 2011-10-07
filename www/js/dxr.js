@@ -29,7 +29,7 @@ function showInfo(node) {
   var name = node.textContent;
   var line = node.parentNode.id.replace('l', '');
   var file = location.pathname.replace(virtroot + tree + '/', '').replace('.html', '');
-  var url = virtroot + "getinfo.cgi?virtroot=" + virtroot;
+  var url = virtroot + "cgi-bin/getinfo.cgi?virtroot=" + virtroot;
   url += "&tree=" + tree;
   url += "&type=" + node.className + "&name=" + name;
   var attrs = node.attributes;
