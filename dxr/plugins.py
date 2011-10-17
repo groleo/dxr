@@ -1,6 +1,7 @@
 import dxr.languages
 import os
 
+
 def in_path(exe):
   """ Returns true if the executable can be found in the given path.
       Equivalent to which, except that it doesn't check executability. """
@@ -34,7 +35,7 @@ def default_pre_html_process(treecfg, blob):
 
 def default_get_htmlifiers():
   """ Returns source code htmlifiers that this plugin uses.
-
+      
       The return value is a dictionary of { file-ending: htmlifier } values.
       An htmlifier is a dictionary consisting of the following keys, whose
       values are functions which receive (blob, srcpath, treeconfig)
@@ -84,7 +85,7 @@ class Schema:
 
       The input schema is a dictionary whose keys are the table names and whose
       values are dictionaries for table schemas.
-
+      
       This class interprets blob data as a dictionary of tables; each table is
       either a dictionary of {key:row} elements or a list of {key:row} elements.
       The rows are dictionaries of {col:value} elements; only those values that
@@ -121,7 +122,7 @@ class SchemaTable:
           may have special values
         mayBeNull is an optional attribute that specifies if the column may
           contain null values. not specifying is equivalent to True
-
+      
       Any column name that begins with a `_' is metadata about the table:
         _key: the result tuple is a tuple for the primary key of the table.
 
@@ -187,7 +188,8 @@ class SchemaTable:
       # Only add the keys in the columns
       keys = colset.intersection(row.iterkeys())
       args = tuple(row[k] for k in keys)
-      yield ('INSERT OR IGNORE INTO %s (%s) VALUES (%s);' % (self.name,
+      yield ('INSERT INTO %s (%s) VALUES (%s);' % (self.name,
+      #yield ('INSERT OR IGNORE INTO %s (%s) VALUES (%s);' % (self.name,
         ','.join(keys), ','.join('?' for k in keys)), args)
 
 def make_get_schema_func(schema):
@@ -210,41 +212,51 @@ def next_global_id():
   last_id += 1
   return last_id
 
+
+def add_to_files(inblob, cols):
+  filetable = {}
+  dxr.debugPPrint( 3, inblob  )
+  for tblname, locKey in cols.iteritems():
+    intable = inblob[tblname]
+    tbliter = isinstance(intable, dict) and intable.itervalues() or intable
+    #dxr.debugPrint(2, "name:%s"%tbliter)
+    for row in tbliter:
+      if locKey not in row or row[locKey] == "":
+        dxr.errorPrint("missing location for :%s" % row)
+        continue
+      fname = row[locKey].split(":")[0]
+      try:
+        tbl = filetable[fname]
+      except KeyError:
+        tbl = filetable[fname] = dict((col, []) for col in cols)
+      tbl[tblname].append(row)
+  for fname in filetable:
+    dxr.debugPrint(3,"add_to_files.filetable:%s" % fname)
+  return filetable
+
 language_by_file = None
-
 def break_into_files(blob, tablelocs):
-  global language_by_file
-
   # The following method builds up the file table
-  def add_to_files(inblob, cols):
-    filetable = {}
-    for tblname, lockey in cols.iteritems():
-      intable = inblob[tblname]
-      tbliter = isinstance(intable, dict) and intable.itervalues() or intable
-      for row in tbliter:
-        fname = row[lockey].split(":")[0]
-        try:
-          tbl = filetable[fname]
-        except KeyError:
-          tbl = filetable[fname] = dict((col, []) for col in cols)
-        tbl[tblname].append(row)
-    return filetable
-
   # Build the map for total stuff
   standard_keys = {
     'scopes': 'sloc',
-    'functions': 'floc',
-    'variables': 'vloc',
-    'types': 'tloc'
+    'functions': 'loc',
+    'variables': 'loc',
+    'types': 'loc'
   }
+  global language_by_file
   if language_by_file is None:
-    language_by_file = add_to_files(dxr.languages.language_data, standard_keys)
+    language_by_file = add_to_files( dxr.languages.language_data, standard_keys)
 
   # Build our map for a specific plugin
+  dxr.debugPrint(3,"-----------")
   perfile = add_to_files(blob, tablelocs)
-  for fname, table in perfile.iteritems():
-    if fname in language_by_file:
-      table.update(language_by_file[fname])
+  dxr.debugPrint(4,"blob:%s"%blob)
+  for file in perfile:
+    dxr.debugPrint(3,"Updating perfile:%s" % file )
+  for name, table in perfile.iteritems():
+    if name in language_by_file:
+      table.update(language_by_file[name])
     else:
       table.update((key, []) for key in standard_keys)
   return perfile

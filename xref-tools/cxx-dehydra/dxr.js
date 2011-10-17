@@ -192,8 +192,8 @@ function printAllBases(t, bases)
                 });
         csv.insert("ref",
                 {
-                'varname':bases[i].type.name,
-                'varloc':tbloc,
+                'name':bases[i].type.name,
+                'loc':tbloc,
                 'refloc':tcloc,
                 'extent': getExtent(bases[i].type,bases[i].type.name)
                 });
@@ -225,11 +225,11 @@ function printMembers(t, members)
         if (members[i].isFunction && members[i].isExtern) {
                 csv.insert("function",
                         {
-                        'fname': members[i].shortName,
-                        'fqualname': members[i].name.replace(fargs,""),
-                        'ftype' : members[i].type.type.name,
-                        'fargs' : fargs,
-                        'floc': locationToString(members[i]),
+                        'name': members[i].shortName,
+                        'qualname': members[i].name.replace(args,""),
+                        'type' : members[i].type.type.name,
+                        'args' : args,
+                        'loc': locationToString(members[i]),
                         'scopename': getScopeName(members[i]),
                         'extent' :getExtent(members[i],members[i].shortName)
                         });
@@ -566,8 +566,8 @@ function process_decl(decl)
        debugPrint(3,"exNotFunction");
             csv.insert("variable",
                     {
-                    'vname': decl.name,
-                    'vloc': locationToString(decl),
+                    'name': decl.name,
+                    'loc': locationToString(decl),
                     'vtype': decl.type.name, // this will not work for arrays
                     'extent' :getExtent(decl,decl.shortName)
                     });
@@ -585,14 +585,14 @@ function process_decl(decl)
 
     // Treat the actual func decl as a statement so we can easily linkify it
     var vtype = '';
-    var vname = decl.name;
+    var name = decl.name;
 
     // member function
-    if (/::/.exec(vname))
+    if (/::/.exec(name))
     {
         var parts = parseName(decl);
         vtype = parts.tname || vtype;
-        vname = parts.name || vname;
+        name = parts.name || name;
     }
 
     /*XXXcsv.insert("decldef",
@@ -610,12 +610,12 @@ function process_decl(decl)
         // Keep track of all params in the function
         for (var i = 0; i < decl.parameters.length; i++)
         {
-            vname = decl.parameters[i].name;
+            name = decl.parameters[i].name;
 
             // we'll skip |this| and treat it as a keyword instead
-            if ('this' == vname) continue;
+            if ('this' == name) continue;
 
-            vshortname = vname.replace(/\(.*$/, ''); // XXX: will vname not always be the same in this case?
+            vshortname = name.replace(/\(.*$/, ''); // XXX: will name not always be the same in this case?
             vlocf = decl.loc.file;
             vlocl = decl.loc.line;
             decl.loc.column++ // col is never accurate, but indicates "further"
@@ -629,8 +629,8 @@ function process_decl(decl)
             }
             csv.insert("variable",
                      {
-                        'vname':vname,
-                        'vloc':locationToString(decl),
+                        'name':name,
+                        'loc':locationToString(decl),
                         'vtype':vtype,
                         'extent' :getExtent(decl,decl.shortName)
                      });
@@ -663,16 +663,16 @@ function process_type(type)
     {
         // Normalize path and throw away column info -- we just care about file + line for types.
         var tname = ensureString(type.name);
-        var tloc = locationToString(type);
-        var tqualname = ensureString(type.typedef.name);
+        var loc = locationToString(type);
+        var qualname = ensureString(type.typedef.name);
 
         var ttemplate = '';
         if (type.template) ttemplate = type.template.name;
 
         csv.insert("typedef",
                 {'tname': tname,
-                 'tloc': tloc,
-                 'tqualname': tqualname,
+                 'loc': loc,
+                 'qualname': qualname,
                  'tkind': 'typedef',
                  'ttemplate': ttemplate
                  });
@@ -683,13 +683,13 @@ function process_type(type)
         if (!type.name || type.name.toString() == 'undefined') return;
 
         // Normalize path and throw away column info -- we just care about file + line for types.
-        var tloc = locationToString(type);
-        if ( tloc == "<built-in>:0:0" ) return;
+        var loc = locationToString(type);
+        if ( loc == "<built-in>:0:0" ) return;
         m = parseName(type);
         csv.insert("type",
                 {'tname': ensureString(m.name),
-                 'tqualname': ensureString(type.name),
-                 'tloc': tloc,
+                 'qualname': ensureString(type.name),
+                 'loc': loc,
                  'tkind': type.kind,
                  'extent': getExtent(type,m.name)
                  /*XXX
@@ -706,8 +706,8 @@ function process_type(type)
                 // XXX
                 csv.insert("variable",
                         {
-                        'vname': type.name+'::'+type.members[i].name,
-                        'vloc': tloc,
+                        'name': type.name+'::'+type.members[i].name,
+                        'loc': loc,
                         'vtype': type.kind,
                         });
             }
@@ -744,13 +744,13 @@ function process_type(type)
         // into the objdir, and linked locally (e.g., xpcom/glue), and in such cases
         // loc will be a filename with no path.  These are useful to have after post-processing.
         // Normalize path and throw away column info -- we just care about file + line for types.
-        var tloc = locationToString(type);
-        if ( tloc == "<built-in>:0:0" ) return;
+        var loc = locationToString(type);
+        if ( loc == "<built-in>:0:0" ) return;
         m = parseName(type);
         csv.insert("type",
             {'tname': m.name,
-            'tqualname': type.name,
-            'tloc': tloc,
+            'qualname': type.name,
+            'loc': loc,
             'tkind': type.kind
             });
 
@@ -796,15 +796,15 @@ function process_function(decl, body)
 {
     // Only worry about members in the source tree.
     if (ignorableFile(decl.loc.file)) return;
-    fargs = '('+decl.name.split(decl.shortName+'(')[1];
-    debugPrint(1,"FARGS:"+fargs);
+    args = '('+decl.name.split(decl.shortName+'(')[1];
+    debugPrint(1,"FARGS:"+args);
     csv.insert("function",
             {
-            'fname': decl.shortName,
-            'fqualname': decl.name.replace(fargs,""),
-            'ftype' : decl.type.type.name,
-            'fargs' : fargs,
-            'floc': locationToString(decl),
+            'name': decl.shortName,
+            'qualname': decl.name.replace(args,""),
+            'type' : decl.type.type.name,
+            'args' : args,
+            'loc': locationToString(decl),
             'extent': getExtent(decl,decl.shortName)
             });
 /*XXX csv.insert("members",
@@ -812,7 +812,7 @@ function process_function(decl, body)
                 'mtloc': decl.loc.file,
                 'mname': decl.name,
                 'mshortname': decl.shortname,
-                'mdecl': floc,
+                'mdecl': loc,
                 'mvalue': '',
                 'maccess': '',
                 'mstatic': '1'
@@ -824,7 +824,7 @@ function process_function(decl, body)
         var mtloc = UNKNOWN_LOCATION;
         if (decl.memberOf && decl.memberOf.loc)
             mtloc = locationToString(decl.memberOf);
-        //var update = "update or abort members set mdef=" + quote(floc);
+        //var update = "update or abort members set mdef=" + quote(loc);
         //update += " where mtname=" + quote(m.tname) + " and mtloc=" + quote(mtloc) + " and mname=" + quote(m.name) + ";";
         //debugPrint(2,"UPDATE:" + update);
     } */
@@ -854,19 +854,19 @@ function process_function(decl, body)
             if (s.isArtificial) return;
 
             // if loc is defined (e.g., we're in an .assign statement[], use that instead).
-            var vloc = loc || stmts.loc;
+            var loc = loc || stmts.loc;
 
-            if (!vloc) return;
+            if (!loc) return;
 
-            var vname = s.shortName;
+            var name = s.shortName;
 
             // Ignore statements and other things we can't easily link in the source.
-            if ((/:?:?operator/.exec(vname)) // overloaded operators
-            || (/^D_[0-9]+$/.exec(vname)) // gcc temporaries
-            || (/^_ZTV.*$/.exec(vname)) // vtable vars
-            || (/.*COMTypeInfo.*/.exec(vname)) // ignore COMTypeInfo<int>
-            || ('this' == vname)
-            || (/^__built_in.*$/.exec(vname))) // gcc built-ins
+            if ((/:?:?operator/.exec(name)) // overloaded operators
+            || (/^D_[0-9]+$/.exec(name)) // gcc temporaries
+            || (/^_ZTV.*$/.exec(name)) // vtable vars
+            || (/.*COMTypeInfo.*/.exec(name)) // ignore COMTypeInfo<int>
+            || ('this' == name)
+            || (/^__built_in.*$/.exec(name))) // gcc built-ins
                 return;
             var vtype = '';
             var vtloc = '';
@@ -888,12 +888,12 @@ function process_function(decl, body)
                 vtloc = s.type.template.arguments[0].loc;
                 // Increase the column, since we'll hit this spot multiple times otherwise
                 // (e.g., once for nsCOMPtr and one for internal type.)  This prevents primary key dupes.
-                vloc.column++;
+                loc.column++;
             }
             else if (/::/.exec(s.name))
             {
                 var parts = parseName(s);
-                vname = s.name;
+                name = s.name;
                 vtype = s.type.name;
                 vtloc = locationToString(s);
             }
@@ -920,33 +920,33 @@ function process_function(decl, body)
             }
 
             var visFcall = s.isFcall ? 1 : -1;
-            debugPrint(1,"REF:"+loc+"++==++"+vname);
+            debugPrint(1,"REF:"+loc+"++==++"+name);
             csv.insert("ref",
                     {
-                    'varname': vname,
-                    'varloc': locationToString(s),
+                    'name': name,
+                    'loc': locationToString(s),
                     'refloc': loc
                     });
 
             // Deal with args to functions called by this var (i.e., function call, get a and b for g(a, b))
             if (s.arguments)
             {
-                vloc.column += vname.length;
+                loc.column += name.length;
                 for (var k = 0; k < s.arguments.length; k++)
                 {
-                    vloc.column += k + 1; // just to indicate "further"
-                    processVariable(s.arguments[k], vloc);
+                    loc.column += k + 1; // just to indicate "further"
+                    processVariable(s.arguments[k], loc);
                 }
             }
 
             // Deal with any .assign variables (e.g., y = x ? a : b);
             if (s.assign)
             {
-                vloc.column += vname.length;
+                loc.column += name.length;
                 for (var k = 0; k < s.assign.length; k++)
                 {
-                    vloc.column += k + 1; // just to indicate "further"
-                    processVariable(s.assign[k], vloc);
+                    loc.column += k + 1; // just to indicate "further"
+                    processVariable(s.assign[k], loc);
                 }
             }
         } /*function processVariable*/

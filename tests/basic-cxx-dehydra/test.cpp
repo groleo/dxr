@@ -1,10 +1,30 @@
-int n=0;
+#define MACRO1 printf
+
+# define	MACRO2(a,b)	\
+(a,b)
+
+#define MACRO3(a,b) printf
+
+
+#define MACRO4 printf \
+	zeta
+
+static int n=0;
+struct cy* cy_ptr=0;
 int k=0;
 int horses[500];
 
-
-
 namespace TestNameSpace {
+	class SomeClass {
+		public:
+		SomeClass();
+		~SomeClass();
+		protected:
+		int aProtectedMethod();
+	};
+	SomeClass::SomeClass() {}
+	SomeClass::~SomeClass() {}
+	int SomeClass::aProtectedMethod() { return 1;}
 	struct declaredStruct ;
 	struct baseStruct {
 		int dummy;
@@ -42,3 +62,5 @@ int main(int argc, char*argv[])
 	read_input();
 	solve();
 }
+
+/* comment */

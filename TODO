@@ -1,0 +1,2 @@
+expanduser breaks under cgi-bin permissions
+	fix: when installing the dxr.config, hardcode the username

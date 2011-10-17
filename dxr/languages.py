@@ -17,50 +17,50 @@ language_schema = dxr.plugins.Schema({
   ],
   # Type definitions: anything that defines a type per the relevant specs.
   "types": [
-    ("tid", "INTEGER", False),            # Unique ID for the type
+    ("id", "INTEGER", False),            # Unique ID for the type
     ("scopeid", "INTEGER", False),        # Scope this type is defined in
     ("tname", "VARCHAR(256)", False),     # Simple name of the type
-    ("tqualname", "VARCHAR(256)", False), # Fully-qualified name of the type
-    ("tloc", "_location", False),         # Location of canonical decl
+    ("qualname", "VARCHAR(256)", False), # Fully-qualified name of the type
+    ("loc", "_location", False),         # Location of canonical decl
     ("tkind", "VARCHAR(32)", True),       # Kind of type (e.g., class, union)
     ("language", "_language", False),     # Language of the type
-    ("_key", "tid")
+    ("_key", "id")
   ],
   # Inheritance relations: note that we store the full transitive closure in
   # this table, so if A extends B and B extends C, we'd have (A, C) stored in
   # the table as well; this is necessary to make SQL queries work, since there's
   # no "transitive closure lookup expression".
   "impl": [
-    ("tbase", "INTEGER", False),      # tid of base type
-    ("tderived", "INTEGER", False),   # tid of derived type
+    ("tbase", "INTEGER", False),      # id of base type
+    ("tderived", "INTEGER", False),   # id of derived type
     ("inhtype", "VARCHAR(32)", True), # Type of inheritance; NULL is indirect
     ("_key", "tbase", "tderived")
   ],
   # Functions: functions, methods, constructors, operator overloads, etc.
   "functions": [
-    ("funcid", "INTEGER", False),         # Function ID (also in scopes)
+    ("id", "INTEGER", False),         # Function ID (also in scopes)
     ("scopeid", "INTEGER", False),        # Scope defined in
-    ("fname", "VARCHAR(256)", False),     # Short name (no args)
-    ("fqualname", "VARCHAR(512)", False), # Fully qualified name, excluding args
-    ("fargs", "VARCHAR(256)", False),     # Argument string, including parens
-    ("ftype", "VARCHAR(256)", False),     # Full return type, as a string
-    ("floc", "_location", True),          # Location of definition
+    ("name", "VARCHAR(256)", False),     # Short name (no args)
+    ("qualname", "VARCHAR(512)", False), # Fully qualified name, excluding args
+    ("args", "VARCHAR(256)", False),     # Argument string, including parens
+    ("type", "VARCHAR(256)", False),     # Full return type, as a string
+    ("loc", "_location", True),          # Location of definition
     ("modifiers", "VARCHAR(256)", True),  # Modifiers (e.g., private)
     ("language", "_language", False),     # Language of the function
-    ("_key", "funcid")
+    ("_key", "id")
   ],
   # Variables: class, global, local, enum constants; they're all in here
   # Variables are of course not scopes, but for ease of use, they use IDs from
   # the same namespace, no scope will have the same ID as a variable and v.v.
   "variables": [
-    ("varid", "INTEGER", False),         # Variable ID
+    ("id", "INTEGER", False),         # Variable ID
     ("scopeid", "INTEGER", False),       # Scope defined in
-    ("vname", "VARCHAR(256)", False),    # Short name
-    ("vloc", "_location", True),         # Location of definition
+    ("name", "VARCHAR(256)", False),    # Short name
+    ("loc", "_location", True),         # Location of definition
     ("vtype", "VARCHAR(256)", True),     # Full type (including pointer stuff)
     ("modifiers", "VARCHAR(256)", True), # Modifiers for the declaration
     ("language", "_language", False),    # Language of the function
-    ("_key", "varid")
+    ("_key", "id")
   ],
   "crosslang": [
     ("canonid", "INTEGER", False),
@@ -76,9 +76,9 @@ language_schema = dxr.plugins.Schema({
 language_data = language_schema.get_empty_blob()
 tableids = {
   'scopes': 'scopeid',
-  'types': 'tid',
-  'functions': 'funcid',
-  'variables': 'varid',
+  'types': 'id',
+  'functions': 'id',
+  'variables': 'id',
   'crosslang': 'canonid'
 }
 for table in language_data:

@@ -1,21 +1,11 @@
-#! /usr/bin/python2.7
+#!/usr/bin/python2
 
-import cgitb; cgitb.enable()
-import cgi
 import sqlite3
+import sys
 import os
 import ConfigParser
 import re
-import sys
-
-# Get the DXR installation point from dxr.config
-if not os.path.isfile('dxr.config'):
-  print('Error reading %s: No such file or directory: dxr.config'  )
-  raise IOError('Error reading %s: No such file or directory: dxr.config')
-
-config = ConfigParser.ConfigParser()
-config.read('dxr.config')
-sys.path.append(config.get('DXR', 'dxrroot'))
+import getopt
 import dxr
 
 def like_escape(val):
@@ -27,32 +17,27 @@ def GetLine(loc):
   parts = loc.split(':')
   name, line = parts[0], int(parts[1])
   if name not in offset_cache:
-    return '<p>Error: Cannot find file %s</p>' % name
+    return 'Error: Cannot find file %s' % name
 
   # Open up the master file
-  master_text.seek(offset_cache[name])
+  g_master_text.seek(offset_cache[name])
 
-  output = ('<div class="searchfile"><a href="%s%s/%s.html#l%d">' +
-    '%s</a></div><ul class="searchresults">\n') % (dxrconfig.virtroot,tree, name, line, loc)
+  #output = ('%s/%s.html %d %s') % (g_tree, name, line, loc)
+  output = ('%s %d %s\n') % (name, line, loc)
   # Show [line - 1, line, line + 1] unless we see more
   read = [line - 1, line, line + 1]
   while True:
-    readname, readline, readtext = master_text.readline().split(':', 2)
+    line=g_master_text.readline()
+    readname, readline, readtext = line.split(':', 2)
     line_num = int(readline)
     if readname != name or line_num > read[-1]:
       break
     if line_num not in read:
       continue
-    output += ('<li class="searchresult"><a href="%s%s/%s.html#l%s">%s:</a>' +
-      '&nbsp;&nbsp;%s</li>\n') % (dxrconfig.virtroot,tree, name, readline, readline,
-      cgi.escape(readtext))
-  output += '</ul>'
+    output += ('%s %s %s [%s]\n') % (name, readline, readline, readtext.rstrip().lstrip())
   return output
 
 def processString(string, path=None, ext=None):
-  vrootfix = dxrconfig.virtroot
-  if vrootfix == '/':
-    vrootfix = ''
   if ext is not None and ext[0] == '.':
     ext = ext[1:]
   def printSidebarResults(name, results):
@@ -67,14 +52,10 @@ def processString(string, path=None, ext=None):
         continue
       if not outputtedResults:
         outputtedResults = True
-        print '<div class="bubble"><span class="title">%s</span><ul>' % name
-      print '<li><a href="%s/%s/%s.html#l%s">%s</a></li>' % \
-        (vrootfix, tree, fixloc[0], fixloc[1], res[0])
-    if outputtedResults:
-      print '</ul></div>'
+        print '%s' % name
+      print '%s/%s %s %s' % ( g_tree, fixloc[0], fixloc[1], res[0])
 
   # Print smart sidebar
-  print '<div id="sidebar">'
   config = [
     ('types', ['tname', 'loc', 'tname']),
     ('macros', ['name', 'loc', 'name']),
@@ -91,7 +72,7 @@ def processString(string, path=None, ext=None):
 
   # Print file sidebar
   printHeader = True
-  filenames = dxr.readFile(os.path.join(treecfg.dbdir, 'file_list.txt'))
+  filenames = dxr.readFile(os.path.join(g_dxrconfig.dbdir, 'file_list.txt'))
   if filenames:
     for filename in filenames.split('\n'):
       # Only check in leaf name
@@ -99,19 +80,16 @@ def processString(string, path=None, ext=None):
       m = re.search(pattern, filename, re.IGNORECASE)
       if m:
         if printHeader:
-          print '<div class=bubble><span class="title">Files</span><ul>'
+          print 'Files'
           printHeader = False
-        filename = vrootfix + '/' + tree + '/' + filename
-        print '<li><a href="%s.html">%s</a></li>' % (filename, m.group(1))
-    if not printHeader:
-      print "</ul></div>"
+        filename = vrootfix + '/' + g_tree + '/' + filename
+        print '%s %s' % (filename, m.group(1))
 
-  print '</div><div id="content">'
 
   # Text search results
   prevfile, first = None, True
-  master_text.seek(0)
-  for line in master_text:
+  g_master_text.seek(0)
+  for line in g_master_text:
     # The index file is <path>:<line>:<text>
     colon = line.find(':')
     colon2 = line.find(':', colon)
@@ -119,32 +97,26 @@ def processString(string, path=None, ext=None):
     if line.find(string, colon2 + 1) != -1:
       # We have a match!
       (filepath, linenum, text) = line.split(':', 2)
-      text = cgi.escape(text)
-      text = re.sub(r'(?i)(' + string + ')', '<b>\\1</b>', text)
       if filepath != prevfile:
         prevfile = filepath
-        if not first:
-          print "</ul>"
         first = False
-        print '<div class="searchfile"><a href="%s/%s/%s.html">%s</a></div><ul class="searchresults">' % (vrootfix, tree, filepath, filepath)
+        print '%s/%s/%s %s' % (vrootfix, g_tree, filepath, filepath)
 
-      print '<li class="searchresult"><a href="%s/%s/%s.html#l%s">%s:</a>&nbsp;&nbsp;%s</li>' % (vrootfix, tree, filepath, linenum, linenum, text)
+      print '%s/%s/%s %s %s %s' % (vrootfix, g_tree, filepath, linenum, linenum, text)
 
   if first:
-    print '<p>No files match your search parameters.</p>'
-  else:
-    print '</ul>'
+    print 'No files match your search parameters.'
 
 def processType(type, path=None):
   for type in conn.execute('select * from types where tname like "' + type + '%";').fetchall():
-    tname = cgi.escape(type['tname'])
+    tname = type['tname']
     if not path or re.search(path, type['loc']):
       info = type['tkind']
       if info == 'typedef':
         typedef = conn.execute('SELECT ttypedef FROM typedefs WHERE id=?',
             (type['id'],)).fetchone()[0]
-        info += ' ' + cgi.escape(typedef)
-      print '<h3>%s (%s)</h3>' % (tname, info)
+        info += ' ' + typedef
+      print '%s (%s)' % (tname, info)
       print GetLine(type['loc'])
 
 def processDerived(derived, path=None):
@@ -170,7 +142,7 @@ def processDerived(derived, path=None):
     print "Empty 'types' table"
     return
 
-  print '<h2>Results for <i>derived:%s</i></h2>\n' % (cgi.escape(tname))
+  print 'Results for derived:%s\n' % (tname)
   # Find everyone who inherits this class
   types = conn.execute('SELECT qualname, id, loc, inhtype FROM impl ' +
     'LEFT JOIN types ON (tderived = id) WHERE tbase=? ORDER BY inhtype DESC',
@@ -180,17 +152,17 @@ def processDerived(derived, path=None):
     for t in types:
       direct = 'Direct' if t[3] is not None else 'Indirect'
       if not path or re.search(path, t[2]):
-        print '<h3><u>%s (%s)</u></h3>' % (cgi.escape(t[0]), direct)
+        print '%s (%s)' % (t[0], direct)
         print GetLine(t[2])
   else:
     typeMaps = dict([(t[1], t[0]) for t in types])
     for method in conn.execute('SELECT scopeid, qualname, loc FROM functions'+
         ' WHERE scopeid IN (' + ','.join([str(t[1]) for t in types]) + ') AND' +
         ' name = ?', (func,)).fetchall():
-      tname = cgi.escape(typeMaps[method[0]])
-      mname = cgi.escape(method[1])
+      tname = typeMaps[method[0]]
+      mname = method[1]
       if not path or re.search(path, method[2]):
-        print '<h3>%s::%s</h3>' % (tname, mname)
+        print '%s::%s' % (tname, mname)
         print GetLine(method[2])
 
 def processMacro(macro):
@@ -200,21 +172,19 @@ def processMacro(macro):
     if m['args']:
       mname += m['args']
     mtext = m['text'] and m['text'] or ''
-    print '<h3>%s</h3><pre>%s</pre>' % (cgi.escape(mname), cgi.escape(mtext))
+    print '%s %s' % (mname, mtext)
     print GetLine(m['loc'])
 
 def processFunction(func):
-  for f in conn.execute('SELECT * FROM functions WHERE qualname LIKE "%' +
-      func + '%";').fetchall():
-    print '<h3>%s</h3>' % cgi.escape(f['qualname'])
+  for f in conn.execute('SELECT * FROM functions WHERE qualname LIKE "%' + func + '%";').fetchall():
+    print '> %s' % f['qualname']
     print GetLine(f['loc'])
 
 def processVariable(var):
   for v in conn.execute('SELECT * FROM variables WHERE name LIKE "%' +
       var + '%";').fetchall():
     qual = v['modifiers'] and v['modifiers'] or ''
-    print '<h3>%s %s %s</h3>' % (cgi.escape(qual), cgi.escape(v['vtype']),
-      cgi.escape(v['name']))
+    print '%s %s %s' % (qual, v['vtype'], v['name'])
     print GetLine(v['loc'])
 
 def processWarnings(warnings, path=None):
@@ -226,94 +196,45 @@ def processWarnings(warnings, path=None):
   for w in conn.execute("SELECT wloc, wmsg FROM warnings WHERE wmsg LIKE '%" +
       warnings + "%' ORDER BY wloc COLLATE loc;").fetchall():
     if not path or re.search(path, w[0]):
-      print '<h3>%s</h3>' % w[1]
+      print '%s' % w[1]
       print GetLine(w[0])
       num_warnings += 1
   if num_warnings == 0:
-    print '<h3>No warnings found.</h3>'
+    print 'No warnings found.'
 
-def processCallers(caller, path=None, id=None):
+def processCallers(caller, path=None, fid=None):
   # I could handle this with a single call, but that gets a bit complicated.
   # Instead, let's first find the function that we're trying to find.
   cur = conn.cursor()
-  if id is None:
+  if fid is None:
     cur.execute('SELECT * FROM functions WHERE qualname %s' %
       like_escape(caller))
     funcinfos = cur.fetchall()
     if len(funcinfos) == 0:
-      print '<h2>No results found</h2>'
+      print 'No results found'
       return
     elif len(funcinfos) > 1:
-      print '<h3>Ambiguous function:</h3><ul>'
       for funcinfo in funcinfos:
-        print ('<li><a href="search.cgi?callers=%s&id=%d&tree=%s">%s</a>' +
-          ' at %s</li>') % (caller, funcinfo['id'], tree,
+        print ('callers=%s id=%d g_tree=%s %s at %s') % (caller, funcinfo['id'], g_tree,
           funcinfo['qualname'], funcinfo['loc'])
-      print '</ul>'
       #return
-    id = funcinfos[0]['id']
+    fid = funcinfos[0]['id']
   # We have two cases: direct calls or we're in targets
   cur = conn.cursor()
-  for info in cur.execute("SELECT functions.* FROM functions " +
+  for info in cur.execute(
+      "SELECT functions.* FROM functions " +
       "LEFT JOIN callers ON (callers.callerid = id) WHERE targetid=? " +
       "UNION SELECT functions.* FROM functions LEFT JOIN callers " +
       "ON (callers.callerid = functions.id) LEFT JOIN targets USING " +
-      "(targetid) WHERE targets.id=?", (id, id)):
+      "(targetid) WHERE targets.id=?", (fid, fid)):
+    print "fid:%s" % info
+
     if not path or re.search(path, info['loc']):
-      print '<h3>%s</h3>' % info['qualname']
+      print 'CALL:%s' % info['qualname']
       print GetLine(info['loc'])
+
   if cur.rowcount == 0:
-    print '<h3>No results found</h3>'
-
-# XXX: enable auto-flush on write - http://mail.python.org/pipermail/python-list/2008-June/668523.html
-# reopen stdout file descriptor with write mode
-# and 0 as the buffer size (unbuffered)
-sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
-
-# Load query parameters
-fieldStorage = cgi.FieldStorage()
-form = dict((key, fieldStorage.getvalue(key)) for key in fieldStorage.keys())
-
-# Which tree are we searching
-if 'tree' in form:
-  tree = form['tree']
-else:
-  # XXX: all trees? default trees? What to do?
-  tree = ''
-
-# XXX: We're assuming dxr.config is in the same place as the web directory.
-# May want to assume standard system location or something for easier large
-# deployments
-
-# Load the configuration files
-dxrconfig = dxr.load_config('./dxr.config')
-for treecfg in dxrconfig.trees:
-  if treecfg.tree == tree:
-    dxrconfig = treecfg
-    break
-else:
-  # XXX: no tree, we're defaulting to the last one
-  dxrconfig = treecfg
-
-# Load the database
-dbname = tree + '.sqlite'
-dxrdb = os.path.join(treecfg.dbdir, dbname)
-if not os.path.isfile(dxrdb):
-  raise BaseException("No such file %s" % dxrdb )
-
-conn = sqlite3.connect(dxrdb)
-conn.execute('PRAGMA temp_store = MEMORY;')
-
-# Master text index, load it
-master_text = open(os.path.join(treecfg.dbdir, 'file_index.txt'), 'r')
-f = open(os.path.join(treecfg.dbdir, 'index_index.txt'), 'r')
-offset_cache = {}
-try:
-  for line in f:
-    l = line.split(':')
-    offset_cache[l[0]] = int(l[-1])
-finally:
-  f.close()
+    print 'No results found'
 
 # This makes results a lot more fun!
 def collate_loc(str1, str2):
@@ -324,37 +245,110 @@ def collate_loc(str1, str2):
   for i in range(2, len(parts2)):
     parts2[i] = int(parts2[i])
   return cmp(parts1, parts2)
-conn.create_collation("loc", collate_loc)
-conn.row_factory = sqlite3.Row
 
-# Output the text results.
-print "Content-Type: text/html\n"
+def usage():
+  print """Usage: search.py [options]
+Options:
+    -h, --help
+    -c callers
+    -d derived
+    -f function
+    -m macro
+    -s string
+    -t type
+    -v variable
+    -w warning"""
 
 
-# XXX... plugins!
-searches = [
-  ('type', processType, False, 'Types %s', ['path']),
-  ('function', processFunction, False, 'Functions %s', []),
-  ('variable', processVariable, False, 'Functions %s', []),
-  ('derived', processDerived, False, 'Derived from %s', ['path']),
-  ('macro', processMacro, False, 'Macros %s', []),
-  ('warnings', processWarnings, False, 'Warnings %s', ['path']),
-  ('callers', processCallers, False, 'Callers of %s', ['path', 'id']),
-  ('string', processString, True, '%s', ['path', 'ext'])
-]
-for param, dispatch, hasSidebar, titlestr, optargs in searches:
-  if param in form:
-    titlestr = cgi.escape(titlestr % form[param])
-    print dxrconfig.getTemplateFile("dxr-search-header.html") % titlestr
-    if not hasSidebar:
-      print '<div id="content">'
-    kwargs = dict((k,form[k]) for k in optargs if k in form)
-    dispatch(form[param], **kwargs)
-    break
-else:
-  print dxrconfig.getTemplateFile("dxr-search-header.html") % 'Error'
-  print '<h3>Error: unknown search parameters</h3>'
+def main(argv):
+    global treecfg
+    global conn
+    global offset_cache
+    global g_dxrconfig
+    global g_tree
+    sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
+    g_tree = 'mozilla-central'
+    g_dbname = g_tree + '.sqlite'
+    g_dxrconfig = dxr.load_config('./dxr.config')
 
-master_text.close()
-print dxrconfig.getTemplateFile("dxr-search-footer.html")
+    for treecfg in g_dxrconfig.trees:
+      if treecfg.tree == g_tree:
+        g_dxrconfig = treecfg
+        break
+    else:
+      g_dxrconfig = treecfg
 
+    g_dxrdb = os.path.join(treecfg.dbdir, g_dbname)
+
+    # Load the database
+    if not os.path.isfile(g_dxrdb):
+      raise BaseException("No such file %s" % g_dxrdb )
+
+    conn = sqlite3.connect(g_dxrdb)
+    conn.execute('PRAGMA temp_store = MEMORY;')
+
+    # Master text index, load it
+    global g_master_text
+    g_master_text = open(os.path.join(g_dxrconfig.dbdir, 'file_index.txt'), 'r')
+    f = open(os.path.join(g_dxrconfig.dbdir, 'index_index.txt'), 'r')
+    offset_cache = {}
+    try:
+      for line in f:
+        l = line.split(':')
+        offset_cache[l[0]] = int(l[-1])
+    finally:
+      f.close()
+
+    conn.create_collation("loc", collate_loc)
+    conn.row_factory = sqlite3.Row
+
+    searches = [
+      ('type', processType, False, 'Types %s', ['path']),
+      ('function', processFunction, False, 'Functions %s', []),
+      ('variable', processVariable, False, 'Functions %s', []),
+      ('derived', processDerived, False, 'Derived from %s', ['path']),
+      ('macro', processMacro, False, 'Macros %s', []),
+      ('warnings', processWarnings, False, 'Warnings %s', ['path']),
+      ('callers', processCallers, False, 'Callers of %s', ['path', 'id']),
+      ('string', processString, True, '%s', ['path', 'ext'])
+    ]
+    # Get the DXR installation point from dxr.config
+    if not os.path.isfile('dxr.config'):
+        print('Error reading %s: No such file or directory: dxr.config'  )
+        raise IOError('Error reading %s: No such file or directory: dxr.config')
+
+    config = ConfigParser.ConfigParser()
+    config.read('dxr.config')
+    sys.path.append(config.get('DXR', 'dxrroot'))
+
+    try:
+        opts, args = getopt.getopt(argv, "hc:d:f:m:s:t:v:w:",["help"])
+    except getopt.GetoptError:
+        usage()
+        sys.exit(1)
+    for a, o in opts:
+        if a in ('-h', '--help'):
+            usage()
+            sys.exit(0)
+        elif a in ('-c'):
+            processCallers(o)
+        elif a in ('-d'):
+            processDerived(o)
+        elif a in ('-f'):
+            processFunction(o)
+        elif a in ('-m'):
+            processMacro(o)
+        elif a in ('-s'):
+            processString(o)
+        elif a in ('-t'):
+            processType(o)
+        elif a in ('-v'):
+            processVariable(o)
+        elif a in ('-w'):
+            processWarnings(o)
+
+
+    g_master_text.close()
+
+if __name__ == '__main__':
+    main(sys.argv[1:])

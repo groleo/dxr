@@ -5,6 +5,24 @@ import dxr.languages
 import imp
 import os, sys
 import string
+import pprint
+
+g_pp = pprint.PrettyPrinter(depth=6)
+debugLvl = None
+
+def debugPrint(lvl,args):
+    if lvl <= debugLvl:
+        print "D:", args
+
+def debugPPrint(lvl,args):
+    if lvl <= debugLvl:
+        g_pp.pprint( args )
+
+def errorPrint(args):
+    print "E:", args
+
+def warningPrint(args):
+    print "W:", args
 
 ###################
 # Plugin handling #
@@ -36,8 +54,10 @@ def get_active_plugins(tree=None, dxrsrc=None):
   return filter(plugin_filter, all_plugins)
 
 def load_plugins(dxrsrc=None):
+  print "dxrsrc:%s" % dxrsrc
   if dxrsrc is None:
     dxrsrc = os.path.realpath(os.path.dirname(sys.argv[0]))
+  print "dxrsrc:%s" % dxrsrc
   dirs = os.listdir(os.path.join(dxrsrc, 'xref-tools'))
   all_plugins = []
   for dirname in dirs:
@@ -54,6 +74,7 @@ def load_plugins(dxrsrc=None):
   return all_plugins
 
 def store_big_blob(tree, blob):
+  print "Store big_blob"
   htmlroot = os.path.join(tree.wwwdir, tree.tree + '-current')
   dbdir = os.path.join(htmlroot, '.dxr_xref')
   # Commented out code: serialize byfile stuff independently, to avoid memory
@@ -83,6 +104,7 @@ def store_big_blob(tree, blob):
   #  blob[plug]["byfile"] = byfile[plug]
 
 def load_big_blob(tree):
+  print "Load big_blob"
   htmlroot = os.path.join(tree.wwwdir, tree.tree + '-current')
   dbdir = os.path.join(htmlroot, '.dxr_xref')
   f = open(os.path.join(dbdir, 'index_blob.dat'), 'rb')
@@ -102,7 +124,7 @@ class DxrConfig(object):
     else:
       self.dxrroot = None
 
-    self.wwwdir = os.path.abspath(os.path.expanduser(config.get('Web', 'wwwdir')))
+    self.wwwdir = os.path.abspath(config.get('Web', 'wwwdir'))
     self.virtroot=config.get('Web','virtroot')
     if self.virtroot != '' and not self.virtroot.endswith('/'):
       self.virtroot += '/'
@@ -117,10 +139,13 @@ class DxrConfig(object):
         or section == 'Web' :
           continue
         self.trees.append(DxrConfig(config, section))
+
+      for tree in self.trees:
+          tree.dbdir = os.path.join(self.wwwdir, tree.tree + '-current', '.dxr_xref')
     else:
       self.tree = self._tree
       self._loadOptions(config, tree)
-      if not 'dbdir' in self.__dict__:
+      if 'dbdir' not in self.__dict__:
         # Build the dbdir from [wwwdir]/tree
         self.dbdir = os.path.join(self.wwwdir, tree + '-current', '.dxr_xref')
       self.isdblive = self.dbdir.startswith(self.wwwdir)
@@ -130,6 +155,9 @@ class DxrConfig(object):
         self.__dict__[opt] = config.get(section, opt)
         if opt.endswith('dir'):
           self.__dict__[opt] = os.path.abspath(self.__dict__[opt])
+
+  def getOption(self, key):
+    return self.__dict__[key]
 
   def getTemplateFile(self, name):
     tmpl = readFile(os.path.join(self.templates, name))

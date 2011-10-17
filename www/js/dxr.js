@@ -7,7 +7,7 @@ dojo.require("dojo.fx");
 // note: virtroot, tree, and this.ranges are defined in the .html file
 
 var infoDiv,
-    infoDivID = 0,
+    currentRequest,
     currentLine,
     signature,
     maincontent,
@@ -15,21 +15,163 @@ var infoDiv,
     signatureVisible = false,
     styleRule = -1;
 
+function isChar(c) {
+  return 'A' <= c && c <= 'z'
+}
+
+function getWordAtOffset(text,offset) {
+  if (text.length <= offset)
+    return;
+
+  var preoffset = offset;
+  var postoffset = offset;
+  while(preoffset && isChar(text[preoffset-1])) preoffset--;
+  while(postoffset < text.length && isChar(text[postoffset])) postoffset++;
+
+  return text.substring(preoffset, postoffset);
+}
+
+function getSearchURL(term) {
+  return virtroot + 'cgi-bin/search.cgi?tree=' + tree + '&string=' + encodeURIComponent(term);
+}
+
 function closeInfo() {
   if (!infoDiv) {
     return;
   }
-  dojo.fx.wipeOut({ node: infoDiv.id,
-                    duration: 500,
-                  }).play();
-  infoDiv = null;
+
+  infoDiv.style.display = 'none';
+  infoDiv.innerHTML = '';
 }
 
-function showInfo(node) {
+function showInfoDiv(anchor_node, search_term, content, offset) {
+  if (!infoDiv) {
+    infoDiv = document.createElement('div');
+    infoDiv.id = "infoBox";
+    infoDiv.style.left = "3px";
+
+    var parent = document.getElementById('code');
+    parent.appendChild(infoDiv);
+  }
+
+  if (offset != -1)
+    infoDiv.style.top = offset + "px";
+  else
+    infoDiv.style.top = (anchor_node.offsetTop + anchor_node.offsetHeight) + "px";
+  div_content = '';
+
+  if (search_term != null) {
+    div_content += '<p>Search for "<a href="' + getSearchURL(search_term) + '">' + search_term + '</a>"...</p>';
+  }
+
+  if (content != null) {
+    div_content += content;
+  }
+
+  infoDiv.innerHTML = div_content;
+  infoDiv.style.display = 'block';
+}
+
+function toggleSubList(elem) {
+  var child = elem.nextSibling;
+
+  if (child.style.display == 'none') {
+    child.style.display = 'block';
+  } else {
+    child.style.display = 'none';
+  }
+}
+
+function jsonToList(content) {
+  str = '<ul>';
+
+  for (var pos in content) {
+    var child = content[pos];
+
+    str += '<li';
+
+    if (child['url']) {
+      str += '><a href="' + child['url'] + '">';
+    } else {
+      str += ' class="listHeader" onclick="toggleSubList(this);">';
+    }
+
+    if (child['icon']) {
+      str += '<p class="' + child['icon'] + '">';
+    } else {
+      str += '<p>';
+    }
+
+    str += child['label'];
+
+    /* Indicate this is a list header */
+    if (!child['url']) {
+      str += ':';
+    }
+
+    str += '</p>';
+
+    if (child['url']) {
+      str += '</a>';
+    }
+
+    str += '</li>';
+
+    if (child['children']) {
+      str += jsonToList(child['children']);
+    }
+  }
+  
+  str += '</ul>';
+  return str;
+}
+
+function jsonToHtml(content) {
+  str = '<div id="infoHeader"><p>' + content['label'] + '</p></div>';
+
+  if (content['children']) {
+    str += jsonToList(content['children']);
+  }
+  
+  return str;
+}
+
+function asyncRequestFinished() {
+  if (req.readyState == 4 && req.status == 200) {
+    if (req.responseText[0] == '<') {
+      // embedded HTML response
+      showInfoDiv(req.anchor_node, req.anchor_node.innerHTML, req.responseText, -1);
+      currentRequest = null;
+    } else {
+      data = eval("(" + req.responseText + ")");
+      showInfoDiv(req.anchor_node, req.anchor_node.innerHTML, jsonToHtml(data), - 1);
+    }
+  }
+}
+
+function asyncRequest(url, anchor_node) {
+  if (currentRequest) {
+    currentRequest.abort();
+    currentRequest = null;
+  }
+
+  req = new XMLHttpRequest();
+  req.onreadystatechange = asyncRequestFinished;
+  req.anchor_node = anchor_node;
+
+  try {
+    req.open("GET", url, true);
+    req.send(null);
+    currentRequest = req;
+  } catch (e) {
+    showInfoDiv(anchor_node, null, "Could not retrieve reference data", -1);
+  }
+}
+
+function queryInfo(node) {
   var name = node.textContent;
-  var line = node.parentNode.id.replace('l', '');
-  var file = location.pathname.replace(virtroot + tree + '/', '').replace('.html', '');
-  var url = virtroot + "cgi-bin/getinfo.cgi?virtroot=" + virtroot;
+  var file = location.pathname.replace(virtroot + '/' + tree + '/', '').replace('.html', '');
+  var url = virtroot + sep + "cgi-bin/getinfo.cgi?virtroot=" + virtroot;
   url += "&tree=" + tree;
   url += "&type=" + node.className + "&name=" + name;
   var attrs = node.attributes;
@@ -41,45 +183,8 @@ function showInfo(node) {
     url += '&' + aname + '=' + encodeURIComponent(value);
   }
 
-  if (infoDiv) {
-    closeInfo();
-  }
-
-  var id = 'info-div-' + infoDivID++;
-  var treediv = 'tree-' + infoDivID;
-  infoDiv = new dojox.layout.ContentPane({
-    id: id,
-    content: '<div class="info"><div id="' + treediv + '"></div></div>',
-    style: "margin:0; padding:0; white-space: normal !important;" +
-           "position: absolute; width: 100%"
-  });
-  infoDiv.placeAt(node, "after");
-  dojo.xhrGet({ url: url,
-    load: function (response, ioArgs) {
-      try {
-        buildTree(JSON.parse(response), treediv);
-      } catch (e) {
-        if (e instanceof SyntaxError) {
-          infoDiv.set('content', response);
-        } else {
-          throw e;
-        }
-      }
-      return response;
-    }
-  });
-  try {
-    if (styleRule >= 0)
-      document.styleSheets[0].deleteRule(styleRule);
-    styleRule = document.styleSheets[0].insertRule('a[rid="' +
-      node.getAttribute("rid") + '"] { background-color: #ffc; }',
-      document.styleSheets[0].length - 1);
-  } catch (e) {
-    styleRule = -1;
-  }
-
-  // TODO: this needs to happen in an onLoad or onDownloadEnd event vs. here...
-  dojo.fx.wipeIn({node: infoDiv.id, duration: 500}).play();
+  showInfoDiv (node, node.innerHTML, "Loading...", -1);
+  asyncRequest(url, node);
 }
 
 function init() {
@@ -220,6 +325,20 @@ function buildTree(items, id) {
   },id);
 }
 
+function isEqualOrDescendant(parent, child) {
+     var elem = child;
+
+     while (elem != null) {
+         if (elem == parent) {
+             return true;
+         }
+
+         elem = elem.parentNode;
+     }
+
+     return false;
+}
+
 dojo.addOnLoad(function() {
   // TODO: deal with sidebar being absent
   var maincontent = dojo.byId('maincontent');
@@ -244,12 +363,34 @@ dojo.addOnLoad(function() {
 
   dojo.connect(dojo.body(), "onclick", function(e) {
     var target = e.target;
+
+    if (infoDiv != null &&
+        infoDiv.style.display == 'block' &&
+        !isEqualOrDescendant(infoDiv, target)) {
+      closeInfo();
+      e.preventDefault();
+      return;
+    }
+
+    if ((target.nodeName == 'DIV' && target.id == 'code') ||
+        (target.nodeName == 'SPAN' && target.className != 'k' && target.className != 'p')) {
+      var s = window.getSelection();
+
+      if (s.anchorNode) {
+        word = getWordAtOffset(s.anchorNode.nodeValue, s.focusOffset);
+
+        if (word.length > 0)
+          showInfoDiv(target, word, null, e.layerY + 15);
+        return;
+      }
+    }
+
     while (target.nodeName === 'SPAN') target = target.parentNode;
-    if (target.nodeName === 'A') {
+    if (target.nodeName === 'A' && e.button == 0) {
       var link = target;
 
       if (link.getAttribute("aria-haspopup")) {
-        showInfo(link);
+        queryInfo(link);
         e.preventDefault();
       } else if (link.className == 'sidebarlink') {
         // Clicked outline link in sidebar, highlight link + line, close info (if open)
@@ -260,8 +401,6 @@ dojo.addOnLoad(function() {
         // Remove signature if visible, or it will cover this
         hideSignature();
       }
-    } else {
-        closeInfo();
     }
   });
 
@@ -274,3 +413,33 @@ dojo.addOnLoad(function() {
 
   init();
 });
+
+function paneVisibility() {
+  var img = document.getElementById(paneVisibility.img_id);
+  var pane = document.getElementById(paneVisibility.pane_id);
+
+  if (paneVisibility.visible == true) {
+    pane.style.display = 'block';
+    img.src = virtroot+'images/icons/bullet_toggle_minus.png';
+    img.title = 'Hide type list';
+  } else {
+    pane.style.display = 'none';
+    img.src = virtroot+'images/icons/bullet_toggle_plus.png';
+    img.title = 'Show type list';
+  }
+
+  dijit.byId('bc').resize();
+}
+
+function toggleLeftPaneVisibility() {
+  paneVisibility.visible = !paneVisibility.visible;
+  paneVisibility();
+}
+
+function initLeftPane(img_id, pane_id, visible) {
+  paneVisibility.img_id = img_id;
+  paneVisibility.pane_id = pane_id;
+  paneVisibility.visible = visible;
+
+  paneVisibility();
+}

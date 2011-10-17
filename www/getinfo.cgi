@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.6
+#!/usr/bin/python2.7
 
 import json
 import cgitb; cgitb.enable()
@@ -9,7 +9,7 @@ import os
 
 def locUrl(loc):
   path, line = loc.split(':')[:2]
-  return '%s/%s/%s.html#l%s' % (virtroot, tree, path, line)
+  return '%s%s/%s.html#l%s' % (virtroot, tree, path, line)
 
 def getDeclarations(defid):
   cur = conn.execute("SELECT declloc FROM decldef WHERE defid=?",(defid,))
@@ -23,24 +23,24 @@ def getDeclarations(defid):
 
 def getType(typeinfo, refs=[], deep=False):
   if isinstance(typeinfo, int):
-    typeinfo = conn.execute("SELECT * FROM types WHERE tid=?",
+    typeinfo = conn.execute("SELECT * FROM types WHERE id=?",
       (typeinfo,)).fetchone()
   typebase = {
-    "label": '%s %s' % (typeinfo['tkind'], typeinfo['tqualname']),
+    "label": '%s %s' % (typeinfo['tkind'], typeinfo['qualname']),
     "icon": "icon-type",
     "children": [{
-      "label": 'Definition at %s' % (typeinfo['tloc']),
+      "label": 'Definition at %s' % (typeinfo['loc']),
       "icon": "icon-def",
-      "url": locUrl(typeinfo['tloc'])
+      "url": locUrl(typeinfo['loc'])
     }]
   }
-  for typedef in conn.execute("SELECT * FROM typedefs WHERE tid=?",
-      (typeinfo['tid'],)):
+  for typedef in conn.execute("SELECT * FROM typedefs WHERE id=?",
+      (typeinfo['id'],)):
     typebase['children'].append({
       "label": 'Real value %s' % (typedef['ttypedef']),
       'icon': 'icon-def'
     })
-  typebase['children'].extend(getDeclarations(typeinfo['tid']))
+  typebase['children'].extend(getDeclarations(typeinfo['id']))
   if not deep:
     return typebase
   members = {
@@ -48,11 +48,11 @@ def getType(typeinfo, refs=[], deep=False):
     "icon": "icon-member",
     "children": []
   }
-  tid = typeinfo['tid']
+  id = typeinfo['id']
   cur = conn.cursor()
-  cur.execute("SELECT tid, 't' FROM types WHERE scopeid=? UNION " +
-    "SELECT funcid, 'f' FROM functions WHERE scopeid=? UNION " +
-    "SELECT varid, 'v' FROM variables WHERE scopeid=?", (tid,tid,tid))
+  cur.execute("SELECT id, 't' FROM types WHERE scopeid=? UNION " +
+    "SELECT id, 'f' FROM functions WHERE scopeid=? UNION " +
+    "SELECT id, 'v' FROM variables WHERE scopeid=?", (id,id,id))
   for memid, qual in cur:
     if qual == 't':
       member = getType(memid)
@@ -74,13 +74,13 @@ def getType(typeinfo, refs=[], deep=False):
     "icon": "icon-base",
     "children": []
   }
-  cur.execute("SELECT * FROM impl WHERE tbase=?", (tid,))
+  cur.execute("SELECT * FROM impl WHERE tbase=?", (id,))
   for derived in cur:
     sub = getType(derived['tderived'])
     sub['label'] = '%s %s' % (sub['label'],
       derived['inhtype'] is None and "(indirect)" or "")
     derivednode["children"].append(sub)
-  cur.execute("SELECT * FROM impl WHERE tderived=?", (tid,))
+  cur.execute("SELECT * FROM impl WHERE tderived=?", (id,))
   for base in cur:
     sub = getType(base['tbase'])
     sub['label'] = '%s %s' % (sub['label'],
@@ -98,9 +98,9 @@ def getType(typeinfo, refs=[], deep=False):
   }
   for ref in refs:
     refnode['children'].append({
-      "label": ref["refloc"],
+      "label": ref["loc"],
       "icon": "icon-def",
-      "url": locUrl(ref["refloc"])
+      "url": locUrl(ref["loc"])
     })
   if len(refnode['children']) > 0:
     typebase['children'].append(refnode)
@@ -108,27 +108,27 @@ def getType(typeinfo, refs=[], deep=False):
 
 def getVariable(varinfo, refs=[]):
   if isinstance(varinfo, int):
-    varinfo = conn.execute("SELECT * FROM variables WHERE varid=?",
+    varinfo = conn.execute("SELECT * FROM variables WHERE id=?",
       (varinfo,)).fetchone()
   varbase = {
-    "label": '%s %s' % (varinfo['vtype'], varinfo['vname']),
+    "label": '%s %s' % (varinfo['vtype'], varinfo['name']),
     "icon": "icon-member",
     "children": [{
-      "label": 'Definition at %s' % (varinfo['vloc']),
+      "label": 'Definition at %s' % (varinfo['loc']),
       "icon": "icon-def",
-      "url": locUrl(varinfo['vloc'])
+      "url": locUrl(varinfo['loc'])
     }]
   }
-  varbase['children'].extend(getDeclarations(varinfo['varid']))
+  varbase['children'].extend(getDeclarations(varinfo['id']))
   refnode = {
     "label": "References",
     "children": []
   }
   for ref in refs:
     refnode['children'].append({
-      "label": ref["refloc"],
+      "label": ref["loc"],
       "icon": "icon-def",
-      "url": locUrl(ref["refloc"])
+      "url": locUrl(ref["loc"])
     })
   if len(refnode['children']) > 0:
     varbase['children'].append(refnode)
@@ -136,13 +136,13 @@ def getVariable(varinfo, refs=[]):
 
 def getCallee(targetid):
   cur = conn.cursor()
-  cur.execute("SELECT * FROM functions WHERE funcid=?", (targetid,))
+  cur.execute("SELECT * FROM functions WHERE id=?", (targetid,))
   if cur.rowcount > 0:
     return getFunction(cur.fetchone())
-  cur.execute("SELECT * FROM variables WHERE varid=?", (targetid,))
+  cur.execute("SELECT * FROM variables WHERE id=?", (targetid,))
   if cur.rowcount > 0:
     return getVariable(cur.fetchone())
-  cur.execute("SELECT funcid FROM targets WHERE targetid=?", (targetid,))
+  cur.execute("SELECT id FROM targets WHERE targetid=?", (targetid,))
   refnode = { "label": "Dynamic call", "children": [] }
   for row in cur:
     refnode['children'].append(getFunction(row[0]))
@@ -150,29 +150,29 @@ def getCallee(targetid):
 
 def getFunction(funcinfo, refs=[], useCallgraph=False):
   if isinstance(funcinfo, int):
-    funcinfo = conn.execute("SELECT * FROM functions WHERE funcid=?",
+    funcinfo = conn.execute("SELECT * FROM functions WHERE id=?",
       (funcinfo,)).fetchone()
   funcbase = {
-    "label": '%s %s%s' % (funcinfo['ftype'], funcinfo['fqualname'], funcinfo['fargs']),
+    "label": '%s %s%s' % (funcinfo['type'], funcinfo['qualname'], funcinfo['args']),
     "icon": "icon-member",
     "children": [{
-      "label": 'Definition at %s' % (funcinfo['floc']),
+      "label": 'Definition at %s' % (funcinfo['loc']),
       "icon": "icon-def",
-      "url": locUrl(funcinfo['floc'])
+      "url": locUrl(funcinfo['loc'])
     }]
   }
   # Reimplementations
   for row in conn.execute("SELECT * FROM functions LEFT JOIN targets ON " +
-      "targets.funcid = functions.funcid WHERE targetid=? AND " +
-      "targets.funcid != ?",
-      (-funcinfo['funcid'], funcinfo['funcid'])):
+      "targets.id = functions.id WHERE targetid=? AND " +
+      "targets.id != ?",
+      (-funcinfo['id'], funcinfo['id'])):
     funcbase['children'].append({
-      "label": 'Reimplemented by %s%s at %s' % (row['fqualname'], row['fargs'],
-        row['floc']),
+      "label": 'Reimplemented by %s%s at %s' % (row['qualname'], row['args'],
+        row['loc']),
       "icon": "icon-def",
-      "url": locUrl(row['floc'])
+      "url": locUrl(row['loc'])
     })
-  funcbase['children'].extend(getDeclarations(funcinfo['funcid']))
+  funcbase['children'].extend(getDeclarations(funcinfo['id']))
 
 
   # References
@@ -182,9 +182,9 @@ def getFunction(funcinfo, refs=[], useCallgraph=False):
   }
   for ref in refs:
     refnode['children'].append({
-      "label": ref["refloc"],
+      "label": ref["loc"],
       "icon": "icon-def",
-      "url": locUrl(ref["refloc"])
+      "url": locUrl(ref["loc"])
     })
   if len(refnode['children']) > 0:
     funcbase['children'].append(refnode)
@@ -196,11 +196,11 @@ def getFunction(funcinfo, refs=[], useCallgraph=False):
     # This means that we want to display callee/caller information
     for info in conn.execute("SELECT callerid FROM callers WHERE targetid=? " +
         "UNION SELECT callerid FROM callers LEFT JOIN targets " +
-        "ON (callers.targetid = targets.targetid) WHERE funcid=?",
-        (funcinfo['funcid'], funcinfo['funcid'])):
+        "ON (callers.targetid = targets.targetid) WHERE id=?",
+        (funcinfo['id'], funcinfo['id'])):
       callee['children'].append(getFunction(info[0]))
     for info in conn.execute("SELECT targetid FROM callers WHERE callerid=?",
-        (funcinfo['funcid'],)):
+        (funcinfo['id'],)):
       caller['children'].append(getCallee(info[0]))
     if len(caller['children']) > 0:
       funcbase['children'].append(caller)
@@ -214,9 +214,9 @@ def printError():
 <div class="info">Um, this isn't right...</div>"""
 
 def printMacro():
-  value = conn.execute('select * from macros where macroid=?;', (refid,)).fetchone()
-  macrotext = value['macrotext'] and value['macrotext'] or ''
-  macroargs = value['macroargs'] and value['macroargs'] or ''
+  value = conn.execute('select * from macros where id=?;', (id,)).fetchone()
+  text = value['text'] and value['text'] or ''
+  args = value['args'] and value['args'] or ''
   print """Content-Type: text/html
 
 <div class="info">
@@ -225,31 +225,31 @@ def printMacro():
 %s
 </pre>
 </div>
-""" % (value['macroname'], macroargs, cgi.escape(macrotext))
+""" % (value['name'], args, cgi.escape(text))
 
 def printType():
-  row = conn.execute("SELECT * FROM types WHERE tid=?", (refid,)).fetchone()
-  refs = conn.execute("SELECT * FROM refs WHERE refid=?", (refid,))
+  row = conn.execute("SELECT * FROM types WHERE id=?", (id,)).fetchone()
+  refs = conn.execute("SELECT * FROM refs WHERE id=?", (id,))
   printTree(json.dumps(getType(row, refs, True)))
 
 def printVariable():
-  row = conn.execute("SELECT * FROM variables WHERE varid=?",
-    (refid,)).fetchone()
-  refs = conn.execute("SELECT * FROM refs WHERE refid=?",(refid,))
+  row = conn.execute("SELECT * FROM variables WHERE id=?",
+    (id,)).fetchone()
+  refs = conn.execute("SELECT * FROM refs WHERE id=?",(id,))
   printTree(json.dumps(getVariable(row, refs)))
 
 def printFunction():
   row = conn.execute("SELECT * FROM functions" +
-    " WHERE funcid=?", (refid,)).fetchone()
-  refs = conn.execute("SELECT * FROM refs WHERE refid=?",(refid,))
+    " WHERE id=?", (id,)).fetchone()
+  refs = conn.execute("SELECT * FROM refs WHERE id=?",(id,))
   printTree(json.dumps(getFunction(row, refs, True)))
 
 def printReference():
-  val = conn.execute("SELECT 'var' FROM variables WHERE varid=?" +
-    " UNION SELECT 'func' FROM functions WHERE funcid=?" +
-    " UNION SELECT 't' FROM types WHERE tid=?" +
-    " UNION SELECT 'm' FROM macros WHERE macroid=?",
-    (refid,refid,refid,refid)).fetchone()[0]
+  val = conn.execute("SELECT 'var' FROM variables WHERE id=?" +
+    " UNION SELECT 'func' FROM functions WHERE id=?" +
+    " UNION SELECT 't' FROM types WHERE id=?" +
+    " UNION SELECT 'm' FROM macros WHERE id=?",
+    (id,id,id,id)).fetchone()[0]
   return dispatch[val]()
 
 def printTree(jsonString):
@@ -275,7 +275,7 @@ if form.has_key('virtroot'):
   virtroot = form['virtroot'].value
 
 if form.has_key('rid'):
-  refid = form['rid'].value
+  id = form['rid'].value
 
 config = ConfigParser.ConfigParser()
 config.read('dxr.config')
