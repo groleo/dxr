@@ -211,6 +211,7 @@ def builddb(treecfg, dbdir):
 
   for stmt in sql_generator():
     if isinstance(stmt, tuple):
+      print "%s:%s" % (stmt[0],stmt[1])
       conn.execute(stmt[0], stmt[1])
     else:
       conn.execute(stmt)
